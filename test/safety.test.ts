@@ -1,11 +1,12 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { imageSize, JobGate, redact, resolveOutput, slugify, sniff } from "../src/safety.js";
 
-const root = mkdtempSync(join(tmpdir(), "aam-root-"));
+// realpath: on macOS the temp dir /var is a symlink to /private/var, and resolveOutput returns real paths.
+const root = realpathSync(mkdtempSync(join(tmpdir(), "aam-root-")));
 const outside = mkdtempSync(join(tmpdir(), "aam-out-"));
 after(() => {
   rmSync(root, { recursive: true, force: true });

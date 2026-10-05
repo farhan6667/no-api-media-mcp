@@ -1,6 +1,6 @@
 // Regression tests for the pre-release security audit. Each block names the finding it locks down.
 import { strict as assert } from "node:assert";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -10,7 +10,7 @@ import { CODEX_SAFETY_ARGS } from "../src/providers/codex.js";
 import { siteDomain } from "../src/providers/generic.js";
 import { assertPublicHttps, maskAccount, redact, resolveOutput, sniff } from "../src/safety.js";
 
-const root = mkdtempSync(join(tmpdir(), "aam-audit-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "aam-audit-")));
 after(() => rmSync(root, { recursive: true, force: true }));
 const base = { roots: [root], provider: "x", prompt: "p", ext: ".png" };
 

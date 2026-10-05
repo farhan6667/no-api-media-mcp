@@ -28,11 +28,20 @@ export function ffmpegPath(): string {
   return platform() === "win32" ? "ffmpeg.exe" : "ffmpeg";
 }
 
-function ff(args: string[], timeoutMs = 10 * 60_000): Promise<string> {
-  // Inputs may only be local files: no http, no concat/playlist tricks that pull in other paths.
-  const safe = args.flatMap((a, i) => (a === "-i" && args[i - 1] !== "-protocol_whitelist" ? ["-protocol_whitelist", "file", a] : [a]));
+/**
+ * Inputs may only be local files: no http, no concat/playlist tricks that pull in other paths.
+ * lavfi (generated colour backgrounds) is allowed through -f lavfi, which never reads files or URLs.
+ */
+export function withFileOnlyInputs(args: string[]): string[] {
+  return args.flatMap((a, i) =>
+    a === "-i" && args[i - 2] !== "-protocol_whitelist" && args[i - 1] !== "lavfi" ? ["-protocol_whitelist", "file", a] : [a],
+  );
+}
+
+export function ff(args: string[], timeoutMs = 10 * 60_000, cwd = tmpdir()): Promise<string> {
+  const safe = withFileOnlyInputs(args);
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath(), ["-hide_banner", "-nostdin", ...safe], { cwd: tmpdir(), shell: false, windowsHide: true, env: scrubbedEnv() });
+    const p = spawn(ffmpegPath(), ["-hide_banner", "-nostdin", ...safe], { cwd, shell: false, windowsHide: true, env: scrubbedEnv() });
     let err = "";
     p.stderr.on("data", (d) => (err += d));
     const t = setTimeout(() => p.kill(), timeoutMs);
@@ -85,6 +94,9 @@ export async function optimizeImage(input: string, output: string, maxWidth?: nu
     last = { q, s };
     if (s >= target) return result(input, output, s, `webp q=${q}`, rounds);
   }
+  // Grainy dark gradients can sit just under the target even at q98 while looking identical.
+  // Within 0.01 of the target at q98 is visually lossless; keep it instead of a file several times larger.
+  if (last.s >= target - 0.01) return result(input, output, last.s, `webp q=98 (within 0.01 of target ${target})`, rounds);
   rounds++;
   await ff(["-y", "-i", input, ...scale, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", output]);
   const s = await ssim(input, output);

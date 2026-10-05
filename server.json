@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.farhan6667/no-api-media-mcp",
   "title": "No API Media",
-  "description": "Images and videos from your ChatGPT, Google AI Pro, Higgsfield and Grok subscriptions. No API keys.",
+  "description": "Images and videos from your ChatGPT, Google AI Pro, Higgsfield and Grok subscriptions, plus a local media studio. No API keys.",
   "repository": {
     "url": "https://github.com/farhan6667/no-api-media-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "no-api-media-mcp",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },

@@ -7,3 +7,4 @@ chrome-profile/
 .env
 .env.*
 .no-api-media/
+scripts/_*.tmp.mjs

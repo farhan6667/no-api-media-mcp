@@ -333,6 +333,7 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   if (ctx.goal) lines.push(`The goal: ${ctx.goal.replace(/\.$/, "")}.`);
   lines.push(QUALITY[style.tier ?? "premium"]);
   lines.push(`What I have in mind: ${soften(visual)}`);
+  if (style.look) lines.push(`Overall visual style: ${LOOKS[style.look]}.`);
   if (brand.colors?.length) lines.push(`Use the brand colours ${brand.colors.join(", ")} as the main palette.`);
   if (TEXT_ASSETS.has(asset) || (asset === "logo" && ctx.exactText?.length)) {
     if (ctx.exactText?.length) {
@@ -346,7 +347,26 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   return lines.join(" ");
 }
 
+/**
+ * Named looks, so a user can say "neon glass" and get the same family of results every time.
+ * neon-glass is modelled on the project's own launch graphics.
+ */
+export const LOOKS = {
+  "neon-glass":
+    "neon-glass look: deep navy to near-black background, glowing cyan, electric blue and violet light, glossy translucent glass icons and cards with soft glowing borders, flowing light ribbons, rounded bold sans-serif headings, generous spacing, luxurious and futuristic",
+  "neon-glass-light":
+    "light neon-glass look: soft white and pale mint background, bright cyan, blue and violet accents, glossy glass icons, white rounded cards with soft shadows, rounded bold sans-serif headings, clean and premium",
+  "luxury-gold":
+    "luxury gold look: deep black or espresso background, champagne gold accents, fine serif headings, marble, silk and brushed metal textures, soft directional light, quiet and expensive",
+  "clay-3d":
+    "soft clay 3D look: rounded matte 3D shapes, pastel colours, soft global illumination, gentle shadows, friendly and polished",
+  "editorial-photo":
+    "editorial photo look: natural light, real textures, considered framing, shallow depth of field, magazine quality",
+} as const;
+export type Look = keyof typeof LOOKS;
+
 export interface Style {
+  look?: Look;
   tier?: "luxury" | "premium" | "playful" | "corporate" | "minimal" | "modest" | "editorial";
   motion?: "3d" | "animated" | "static";
   theme?: "dark" | "light" | "unknown";

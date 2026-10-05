@@ -21,6 +21,10 @@ This server holds a logged-in browser session for accounts people pay for. That 
 | Runaway spending | One job at a time, a minimum gap per provider. Flow and Higgsfield read the real cost first and refuse above `max_credits`. Sites without a price need `confirm_spend: true`. |
 | Getting the account flagged | Human pace, no captcha solving, no fingerprint spoofing, Chrome's automation bar left on. The server stops at sign-in, consent and "are you human" pages and asks the user. |
 | Telemetry | None. The server talks only to the provider sites you use. |
+| Editing tools reading or writing the wrong files | Every input of `video_edit`, `social_sizes`, `background_remove` and `media_probe` (including logos, audio and subtitle files) must resolve inside the project; images and videos are checked by their bytes, subtitles must be `.srt`. Outputs go through the same checks as generated files. |
+| Filter injection through user text | Overlay text is written to a file and read with `textfile=` with `expansion=none`, so neither `:` nor `%{...}` in the text can add ffmpeg options or call ffmpeg functions. Colours, sizes, positions and numbers are validated against fixed patterns. Subtitles are copied into a private temp folder under a fixed name. |
+| ffmpeg fetching other files or URLs | Every input gets `-protocol_whitelist file`. Generated backgrounds use `-f lavfi`, which reads nothing. |
+| Background removal leaking images | rembg runs locally on your CPU. The only network use is its one-time model download from the rembg GitHub releases; images never leave the machine. API-key variables are stripped from its environment like every other child process. |
 
 ## Things you should know
 

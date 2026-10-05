@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSetup } from "./setup.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -15,8 +15,9 @@ import { genericGenerate, genericStatus, loadSpecs } from "./providers/generic.j
 import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, higgsfieldStatus } from "./providers/higgsfield.js";
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
-import { ASSET_TYPES, designBrief } from "./design.js";
+import { ASSET_TYPES, designBrief, LOOKS, type Look } from "./design.js";
 import { projectProfile, TIERS } from "./project.js";
+import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
 
 // Single source of truth for the version: package.json (two levels up from dist/src).
 const VERSION: string = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version;
@@ -51,6 +52,8 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   process.exit(0);
 }
 const gate = new JobGate(cfg.minGapSeconds * 1000);
+// Local edits (ffmpeg, rembg) touch no website, so they skip the human-pace gap but still run one at a time.
+const localGate = new JobGate(0);
 /**
  * Sent to every MCP client when it connects, so the user can say "make a hero image for this site"
  * and the agent already knows the whole workflow. No prompt engineering on the user's side.
@@ -121,9 +124,9 @@ function progress(extra: Extra, label: string) {
 }
 
 /** Run a generation job: one at a time, with progress, cancellation and the heartbeat cleaned up. */
-function job<T>(extra: Extra, key: string, label: string, fn: (onTick: (ms: number) => void) => Promise<T>) {
+function job<T>(extra: Extra, key: string, label: string, fn: (onTick: (ms: number) => void) => Promise<T>, g: JobGate = gate) {
   const p = progress(extra, label);
-  return gate
+  return g
     .run(key, async () => {
       if (extra.signal.aborted) throw new Error("Cancelled");
       return fn(p.onTick);
@@ -249,6 +252,7 @@ server.registerTool(
       style: z
         .object({
           tier: z.enum(TIERS).optional().describe("From project_profile, or what the user asked for"),
+          look: z.enum(Object.keys(LOOKS) as [Look, ...Look[]]).optional().describe("Named visual family. neon-glass = dark navy, glowing cyan/blue/violet glass, the style of this project's own graphics"),
           motion: z.enum(["3d", "animated", "static"]).optional(),
           theme: z.enum(["dark", "light", "unknown"]).optional(),
           referenceNotes: z.string().max(400).optional().describe("A few words on the project's existing images you looked at"),
@@ -549,6 +553,208 @@ function readHead(file: string, n = 64): Buffer {
     closeSync(fd);
   }
 }
+
+const AUDIO_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac"]);
+
+/** An input file: must be inside the project and really be what it claims (media by bytes, srt/audio by extension and size). */
+function resolveInput(p: string, kind: "media" | "audio" | "srt" = "media") {
+  const root = realpathSync(cfg.outputRoots[0]);
+  const file = realpathSync(resolve(root, p));
+  if (!cfg.outputRoots.some((r) => isInside(file, realpathSync(r)))) throw new Error(`Input must be inside the project: ${p}`);
+  const ext = extname(file).toLowerCase();
+  if (kind === "srt") {
+    if (ext !== ".srt") throw new Error("Subtitles must be an .srt file.");
+  } else if (kind === "audio") {
+    if (!AUDIO_EXTS.has(ext) && !sniff(readHead(file))?.mime.startsWith("video/")) throw new Error("Audio must be mp3, wav, m4a, aac, ogg, opus or flac.");
+  } else {
+    if (!sniff(readHead(file))) throw new Error(`Not a real image or video file: ${p}`);
+  }
+  return { root, file };
+}
+
+function outputFor(root: string, input: string, wanted: string | undefined, suffix: string, ext: string, overwrite: boolean) {
+  const def = relative(root, input).replace(/\.\w+$/, `${suffix}${ext}`);
+  const out = resolveOutput({ roots: cfg.outputRoots, outputPath: wanted ?? def, provider: "edit", prompt: "", ext, overwrite });
+  mkdirSync(dirname(out), { recursive: true });
+  return out;
+}
+
+server.registerTool(
+  "media_probe",
+  {
+    title: "What's in a media file",
+    description: "Duration, size, frame rate and codecs of an image or video inside the project.",
+    inputSchema: { input_path: z.string().max(500) },
+  },
+  async (a) => {
+    try {
+      const { file } = resolveInput(a.input_path);
+      return ok({ file: a.input_path, bytes: statSync(file).size, ...(await probe(file)) });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "background_remove",
+  {
+    title: "Remove the background from an image",
+    description:
+      "Cuts out the subject and saves a transparent PNG, fully on this computer with rembg and BiRefNet models (no upload, no API). " +
+      "quality: fast (BiRefNet lite, default), best (BiRefNet general, slower, ~1 GB model on first use), portrait (people), anime. " +
+      "The first run downloads the model once. Needs rembg: uv tool install \"rembg[cpu,cli]\".",
+    inputSchema: {
+      input_path: z.string().max(500),
+      output_path: z.string().max(500).optional().describe("Default: <name>-cutout.png next to the input"),
+      quality: z.enum(["fast", "best", "portrait", "anime"]).default("fast"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const { root, file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("Background removal works on images.");
+      const out = outputFor(root, file, a.output_path, "-cutout", ".png", a.overwrite);
+      if (extname(out).toLowerCase() !== ".png") throw new Error("The cutout must be saved as .png to keep transparency.");
+      return await job(extra, "rembg", "background removal", async () => {
+        await removeBackground(file, out, a.quality, cfg.home, extra.signal);
+        const buf = readFileSync(out);
+        return ok({ output: relative(root, out), bytes: buf.length, ...imageSize(buf), quality: a.quality });
+      }, localGate).catch(fail);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "social_sizes",
+  {
+    title: "Make every social and web size from one image",
+    description:
+      "From one image, makes the sizes people need: Open Graph, LinkedIn, X, Instagram square/portrait/story, YouTube thumbnail, Pinterest, " +
+      "GitHub social preview, favicon and app icons. fit: cover (fill and crop, photos), contain (whole image on a blurred copy of itself, logos and posters), " +
+      "pad (whole image on a solid colour). Files go to the output folder named after each preset.",
+    inputSchema: {
+      input_path: z.string().max(500),
+      presets: z.array(z.enum(Object.keys(SOCIAL_PRESETS) as [SocialPreset, ...SocialPreset[]])).optional().describe("Default: all"),
+      fit: z.enum(["cover", "contain", "pad"]).default("contain"),
+      pad_color: z.string().regex(/^(#?[0-9a-fA-F]{6}|black|white)$/).default("#0b1020"),
+      output_dir: z.string().max(400).optional().describe("Default: <input folder>/<name>-sizes"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const { root, file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("social_sizes works on images.");
+      const base = basename(file).replace(/\.\w+$/, "");
+      const dir = a.output_dir ?? join(relative(root, dirname(file)), `${base}-sizes`);
+      const presets = a.presets ?? (Object.keys(SOCIAL_PRESETS) as SocialPreset[]);
+      const color = a.pad_color.startsWith("#") ? `0x${a.pad_color.slice(1)}` : /^[0-9a-fA-F]{6}$/.test(a.pad_color) ? `0x${a.pad_color}` : a.pad_color;
+      // Validate every target before writing anything.
+      const targets = new Map(presets.map((p) => [p, resolveOutput({ roots: cfg.outputRoots, outputPath: join(dir, `${p}${SOCIAL_PRESETS[p].ext}`), provider: "edit", prompt: "", ext: SOCIAL_PRESETS[p].ext, overwrite: a.overwrite })]));
+      const p = progress(extra, "social sizes");
+      try {
+        const r = await socialSizes(file, (preset) => targets.get(preset)!, presets, a.fit, color);
+        return ok({ made: r.map((x) => ({ ...x, file: relative(root, x.file) })) });
+      } finally {
+        p.done();
+      }
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+const OPS = ["trim", "reframe", "speed", "fade", "mute", "replace_audio", "extract_frame", "gif", "text", "logo", "subtitles", "concat"] as const;
+
+server.registerTool(
+  "video_edit",
+  {
+    title: "Edit a video (or put text/logo on an image)",
+    description:
+      "One operation per call, all local with ffmpeg: trim (start, end), reframe (aspect 9:16/1:1/16:9/4:5/4:3, fit cover|contain), speed (factor), " +
+      "fade (fade_in, fade_out seconds), mute, replace_audio (audio_path), extract_frame (at seconds, e.g. a poster image), gif (start, duration, width, fps), " +
+      "text (text, position top|center|bottom, size, color, box) on a video or image, logo (logo_path, position, width_percent) on a video or image, " +
+      "subtitles (srt_path, burned in), concat (others: more clips joined after this one). Chain calls for several edits.",
+    inputSchema: {
+      input_path: z.string().max(500),
+      operation: z.enum(OPS),
+      output_path: z.string().max(500).optional(),
+      overwrite: z.boolean().default(false),
+      start: z.number().min(0).max(36_000).optional(),
+      end: z.number().min(0).max(36_000).optional(),
+      duration: z.number().min(0.1).max(60).optional(),
+      at: z.number().min(0).max(36_000).optional(),
+      aspect: z.enum(["9:16", "1:1", "16:9", "4:5", "4:3"]).optional(),
+      fit: z.enum(["cover", "contain"]).default("cover"),
+      factor: z.number().min(0.1).max(10).optional(),
+      fade_in: z.number().min(0).max(30).default(0),
+      fade_out: z.number().min(0).max(30).default(0),
+      audio_path: z.string().max(500).optional(),
+      width: z.number().int().min(64).max(1920).default(640),
+      fps: z.number().int().min(1).max(30).default(12),
+      text: z.string().max(300).optional(),
+      position: z.enum(["top", "center", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"]).optional(),
+      size: z.number().int().min(10).max(300).default(64),
+      color: z.string().regex(/^(#[0-9a-fA-F]{6}|white|black|yellow|red|cyan)$/).default("white"),
+      box: z.boolean().default(true),
+      logo_path: z.string().max(500).optional(),
+      width_percent: z.number().min(2).max(60).default(15),
+      srt_path: z.string().max(500).optional(),
+      others: z.array(z.string().max(500)).max(20).optional(),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const { root, file } = resolveInput(a.input_path);
+      const isImage = sniff(readHead(file))!.mime.startsWith("image/");
+      const need = <T,>(v: T | undefined, name: string): T => {
+        if (v === undefined || v === null || v === "") throw new Error(`${a.operation} needs ${name}.`);
+        return v;
+      };
+      if (isImage && !["text", "logo"].includes(a.operation)) throw new Error(`${a.operation} works on videos. For images use text or logo.`);
+      const vidExt = isImage ? extname(file).toLowerCase().replace(".jpeg", ".jpg") : ".mp4";
+      const col = a.color.startsWith("#") ? `0x${a.color.slice(1)}` : a.color;
+      let op: VideoOp;
+      let ext = vidExt;
+      switch (a.operation) {
+        case "trim": op = { op: "trim", start: a.start ?? 0, end: a.end }; break;
+        case "reframe": op = { op: "reframe", aspect: need(a.aspect, "aspect"), fit: a.fit }; break;
+        case "speed": op = { op: "speed", factor: need(a.factor, "factor") }; break;
+        case "fade": op = { op: "fade", fadeIn: a.fade_in, fadeOut: a.fade_out }; break;
+        case "mute": op = { op: "mute" }; break;
+        case "replace_audio": op = { op: "replace_audio", audio: resolveInput(need(a.audio_path, "audio_path"), "audio").file }; break;
+        case "extract_frame": op = { op: "extract_frame", at: a.at ?? 0 }; ext = ".jpg"; break;
+        case "gif": op = { op: "gif", start: a.start ?? 0, duration: a.duration ?? 4, width: a.width, fps: a.fps }; ext = ".gif"; break;
+        case "text": {
+          const pos = a.position ?? "bottom";
+          if (!["top", "center", "bottom"].includes(pos)) throw new Error("text position must be top, center or bottom.");
+          op = { op: "text", text: need(a.text, "text"), position: pos as "top" | "center" | "bottom", size: a.size, color: col, box: a.box };
+          break;
+        }
+        case "logo": {
+          const pos = a.position ?? "bottom-right";
+          if (!["top-left", "top-right", "bottom-left", "bottom-right"].includes(pos)) throw new Error("logo position must be a corner.");
+          op = { op: "logo", logo: resolveInput(need(a.logo_path, "logo_path")).file, position: pos as "top-left", widthPercent: a.width_percent };
+          break;
+        }
+        case "subtitles": op = { op: "subtitles", srt: resolveInput(need(a.srt_path, "srt_path"), "srt").file }; break;
+        case "concat": op = { op: "concat", others: need(a.others, "others").map((o) => resolveInput(o).file) }; break;
+      }
+      const out = outputFor(root, file, a.output_path, `-${a.operation.replace("_", "-")}`, ext, a.overwrite);
+      return await job(extra, "edit", `video_edit ${a.operation}`, async () => {
+        await videoEdit(file, op, out);
+        const info = await probe(out).catch(() => ({}));
+        return ok({ output: relative(root, out), bytes: statSync(out).size, ...info });
+      }, localGate).catch(fail);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
 
 server.registerTool(
   "media_optimize",

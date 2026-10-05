@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.ai-media/
+chrome-profile/
+.ai-accounts-mcp/
+*.log
+.env
+.env.*
+.no-api-media/

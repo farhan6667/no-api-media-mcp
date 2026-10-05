@@ -1,0 +1,70 @@
+{
+  "name": "no-api-media-mcp",
+  "version": "0.1.0",
+  "description": "Generate images and videos for your projects with the ChatGPT, Google AI Pro, Higgsfield and Grok subscriptions you already pay for. No API keys.",
+  "main": "dist/src/index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/test/*.test.js",
+    "start": "node dist/src/index.js",
+    "prepublishOnly": "npm test",
+    "prepare": "npm run build",
+    "setup": "node dist/src/index.js setup"
+  },
+  "author": "farhan6667",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "playwright-core": "^1.63.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "bin": {
+    "no-api-media-mcp": "dist/src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist/src",
+    "examples",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "chatgpt",
+    "google-flow",
+    "veo",
+    "nano-banana",
+    "gemini",
+    "grok",
+    "higgsfield",
+    "image-generation",
+    "video-generation",
+    "no-api-key"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farhan6667/no-api-media-mcp.git"
+  },
+  "homepage": "https://github.com/farhan6667/no-api-media-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/farhan6667/no-api-media-mcp/issues"
+  },
+  "mcpName": "io.github.farhan6667/no-api-media-mcp",
+  "publishConfig": {
+    "access": "public"
+  }
+}

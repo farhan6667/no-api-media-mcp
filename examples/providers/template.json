@@ -1,0 +1,15 @@
+{
+  "id": "my-site",
+  "name": "My image site",
+  "url": "https://example.com/create",
+  "kinds": ["image"],
+  "input": "textarea, [contenteditable=\"true\"]",
+  "submit": "enter",
+  "promptTemplate": { "image": "Generate an image: {prompt}" },
+  "busy": "button[aria-label*='Stop']",
+  "loggedOut": "a[href*='login'], button:has-text('Sign in')",
+  "mediaHosts": ["example.com"],
+  "minSize": 512,
+  "timeoutSeconds": 300,
+  "notes": "Template. Replace every selector after checking the real page."
+}

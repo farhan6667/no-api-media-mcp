@@ -1,0 +1,14 @@
+{
+  "id": "grok",
+  "name": "Grok (grok.com)",
+  "url": "https://grok.com/",
+  "kinds": ["image", "video"],
+  "input": "textarea, [contenteditable=\"true\"]",
+  "submit": "enter",
+  "promptTemplate": { "image": "Generate an image: {prompt}", "video": "Generate a short video: {prompt}" },
+  "busy": "button[aria-label*='Stop']",
+  "loggedOut": "a[href*='sign-in'], a[href*='/login'], button:has-text('Sign in')",
+  "mediaHosts": ["grok.com", "x.ai", "x.com", "twimg.com"],
+  "timeoutSeconds": 600,
+  "notes": "Same as the built-in spec. Copy and edit this file to override it. Not yet verified against a live account."
+}

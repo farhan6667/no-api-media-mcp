@@ -1,0 +1,54 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.farhan6667/no-api-media-mcp",
+  "title": "No API Media",
+  "description": "Images and videos from your ChatGPT, Google AI Pro, Higgsfield and Grok subscriptions. No API keys.",
+  "repository": {
+    "url": "https://github.com/farhan6667/no-api-media-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "no-api-media-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NOAPI_HOME",
+          "description": "Private browser profile and state folder",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_OUTPUT_ROOTS",
+          "description": "Folders the server may write to",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_GOOGLE_EMAIL",
+          "description": "Which signed-in Google account to use",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_MIN_GAP",
+          "description": "Seconds between two generations on one provider",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_CHROME",
+          "description": "Path to Google Chrome if not auto-detected",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

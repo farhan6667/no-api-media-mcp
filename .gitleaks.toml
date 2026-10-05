@@ -1,0 +1,7 @@
+# Test files contain deliberately fake keys that exercise redact(). Nothing real lives there.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake secrets used by the redaction tests"
+paths = ['''^test/.*\.test\.ts$''']

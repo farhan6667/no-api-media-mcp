@@ -1,0 +1,31 @@
+name: Add a new AI site
+description: Ask for (or offer) support for another image or video site
+labels: [provider-request]
+body:
+  - type: input
+    id: site
+    attributes:
+      label: Site
+      placeholder: https://example.com/create
+    validations:
+      required: true
+  - type: checkboxes
+    id: kinds
+    attributes:
+      label: What it makes
+      options:
+        - label: Images
+        - label: Videos
+  - type: dropdown
+    id: access
+    attributes:
+      label: How do you use it today?
+      options:
+        - Website only
+        - It has an official CLI or desktop app
+        - It only has a paid API (not accepted, this project is API-free)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Free tier? Credits? Anything odd about the page?

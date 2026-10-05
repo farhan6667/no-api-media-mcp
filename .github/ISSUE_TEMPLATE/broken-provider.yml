@@ -1,0 +1,31 @@
+name: A provider stopped working
+description: A site changed and a tool now fails
+labels: [provider-broken]
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      placeholder: flow, chatgpt, gemini, grok, higgsfield, ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message
+      description: Paste the tool's error. It is already redacted, but check for anything personal before posting.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: no-api-media-mcp version and OS
+      placeholder: 0.1.0, Windows 11
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I removed emails, cookies, tokens and screenshots of my account from this report
+          required: true

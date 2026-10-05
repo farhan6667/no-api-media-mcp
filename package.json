@@ -14,7 +14,7 @@
     "prepare": "npm run build",
     "setup": "node dist/src/index.js setup"
   },
-  "author": "farhan6667",
+  "author": "Syed Farhan Ahmed (https://nexaforge.eu.cc/)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

@@ -215,3 +215,11 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 ## License
 
 [MIT](LICENSE)
+
+---
+
+<div align="center">
+
+Built by <a href="https://github.com/farhan6667">Syed Farhan Ahmed</a> · <a href="https://nexaforge.eu.cc/">nexaforge.eu.cc</a>
+
+</div>

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { inspectMetadata, labels, stripMetadata } from "./metadata.js";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { env, extraBinDirs, scrubbedEnv } from "./config.js";
@@ -69,6 +70,16 @@ async function ssim(original: string, optimized: string): Promise<number> {
   return m ? Number(m[m.length - 1].slice(4)) : NaN;
 }
 
+export interface MetadataReport {
+  /** true when stripping was on for this call. */
+  stripped: boolean;
+  /** Labels no longer present in the output (removed on purpose, or dropped by the encoder). */
+  removed: string[];
+  /** Labels still present in the output. */
+  kept: string[];
+  note?: string;
+}
+
 export interface OptimizeResult {
   output: string;
   originalBytes: number;
@@ -77,30 +88,76 @@ export interface OptimizeResult {
   ssim: number;
   setting: string;
   rounds: number;
+  metadata: MetadataReport;
+}
+
+const KEEP_NOTE =
+  "keep_metadata: nothing was stripped on purpose. Items listed under removed were lost by re-encoding itself " +
+  "(a signed C2PA manifest is bound to the original bytes and cannot stay valid in a new file).";
+
+/**
+ * After encoding: strip embedded metadata from the output (default) or leave it, and report exactly what
+ * happened by comparing what the input carried with what the output still carries.
+ */
+export async function finishMetadata(input: string, output: string, strip: boolean): Promise<MetadataReport> {
+  const before = labels(inspectMetadata(readFileSync(input)).items);
+  let removedNow: string[] = [];
+  if (strip) {
+    let r = stripMetadata(readFileSync(output));
+    if (r.needsRemux) {
+      // A uuid box sits before the media data: rebuild the container instead of trimming bytes.
+      const tmp = `${output}.remux.mp4`;
+      await ff(["-y", "-i", output, "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1", "-movflags", "+faststart", tmp]);
+      renameSync(tmp, output);
+      r = stripMetadata(readFileSync(output));
+      if (r.needsRemux) throw new Error("Could not remove a uuid box from the video container even after re-muxing.");
+    }
+    if (r.removed.length) writeFileSync(output, r.out);
+    removedNow = labels(r.removed);
+  }
+  const after = labels(inspectMetadata(readFileSync(output)).items);
+  const removed = [...new Set([...before.filter((l) => !after.includes(l)), ...removedNow])];
+  return {
+    stripped: strip,
+    removed,
+    kept: after,
+    note: strip ? (after.length ? "Some metadata is still present; please report this with the file type." : undefined) : KEEP_NOTE,
+  };
 }
 
 /**
  * Make an image smaller for the web without a visible change.
  * Starts at WebP quality 82 and climbs until SSIM >= target (default 0.985), falling back to lossless WebP.
  */
-export async function optimizeImage(input: string, output: string, maxWidth?: number, target = 0.985): Promise<OptimizeResult> {
+export async function optimizeImage(input: string, output: string, maxWidth?: number, target = 0.985, strip = true): Promise<OptimizeResult> {
   const scale = maxWidth ? ["-vf", `scale='min(iw,${maxWidth})':-2:flags=lanczos`] : [];
+  const meta = strip ? ["-map_metadata", "-1"] : ["-map_metadata", "0"];
   let rounds = 0;
   let last = { q: 0, s: 0 };
+  let setting = "";
   for (const q of [82, 88, 92, 95, 98]) {
     rounds++;
-    await ff(["-y", "-i", input, ...scale, "-c:v", "libwebp", "-quality", String(q), "-compression_level", "6", "-preset", "picture", output]);
+    await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-quality", String(q), "-compression_level", "6", "-preset", "picture", output]);
     const s = await ssim(input, output);
     last = { q, s };
-    if (s >= target) return result(input, output, s, `webp q=${q}`, rounds);
+    if (s >= target) {
+      setting = `webp q=${q}`;
+      break;
+    }
   }
-  // Grainy dark gradients can sit just under the target even at q98 while looking identical.
-  // Within 0.01 of the target at q98 is visually lossless; keep it instead of a file several times larger.
-  if (last.s >= target - 0.01) return result(input, output, last.s, `webp q=98 (within 0.01 of target ${target})`, rounds);
-  rounds++;
-  await ff(["-y", "-i", input, ...scale, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", output]);
-  const s = await ssim(input, output);
-  return result(input, output, s, `webp lossless (lossy q=${last.q} only reached ${last.s.toFixed(4)})`, rounds);
+  if (!setting) {
+    // Grainy dark gradients can sit just under the target even at q98 while looking identical.
+    // Within 0.01 of the target at q98 is visually lossless; keep it instead of a file several times larger.
+    if (last.s >= target - 0.01) setting = `webp q=98 (within 0.01 of target ${target})`;
+    else {
+      rounds++;
+      await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", output]);
+      last = { q: 100, s: await ssim(input, output) };
+      setting = `webp lossless (lossy q=98 only reached ${last.s.toFixed(4)})`;
+    }
+  }
+  const metadata = await finishMetadata(input, output, strip);
+  return { ...result(input, output, last.s, setting, rounds), metadata };
 }
 
 /**
@@ -110,24 +167,28 @@ export async function optimizeImage(input: string, output: string, maxWidth?: nu
 export async function optimizeVideo(
   input: string,
   output: string,
-  opts: { maxWidth?: number; keepAudio?: boolean; target?: number } = {},
+  opts: { maxWidth?: number; keepAudio?: boolean; target?: number; strip?: boolean } = {},
 ): Promise<OptimizeResult> {
   const target = opts.target ?? 0.97;
+  const strip = opts.strip ?? true;
   const vf = opts.maxWidth ? ["-vf", `scale='min(iw,${opts.maxWidth})':-2:flags=lanczos`] : [];
   const audio = opts.keepAudio ? ["-c:a", "aac", "-b:a", "128k"] : ["-an"];
+  // Container tags and chapters: dropped when stripping, carried over from the input otherwise.
+  const meta = strip ? ["-map_metadata", "-1", "-map_chapters", "-1"] : ["-map_metadata", "0"];
   let rounds = 0;
   let s = 0;
   let crf = 23;
   for (crf of [23, 20, 18, 16]) {
     rounds++;
-    await ff(["-y", "-i", input, ...vf, "-c:v", "libx264", "-preset", "slow", "-crf", String(crf), "-pix_fmt", "yuv420p", ...audio, "-movflags", "+faststart", output]);
+    await ff(["-y", "-i", input, ...vf, ...meta, "-c:v", "libx264", "-preset", "slow", "-crf", String(crf), "-pix_fmt", "yuv420p", ...audio, "-movflags", "+faststart", output]);
     s = await ssim(input, output);
     if (s >= target) break;
   }
-  return result(input, output, s, `h264 crf=${crf}${opts.keepAudio ? " +audio" : " no audio"}`, rounds);
+  const metadata = await finishMetadata(input, output, strip);
+  return { ...result(input, output, s, `h264 crf=${crf}${opts.keepAudio ? " +audio" : " no audio"}`, rounds), metadata };
 }
 
-function result(input: string, output: string, s: number, setting: string, rounds: number): OptimizeResult {
+function result(input: string, output: string, s: number, setting: string, rounds: number): Omit<OptimizeResult, "metadata"> {
   const a = statSync(input).size;
   const b = statSync(output).size;
   return { output, originalBytes: a, outputBytes: b, saved: `${Math.round((1 - b / a) * 100)}%`, ssim: Number(s.toFixed(4)), setting, rounds };

@@ -33,6 +33,44 @@ export interface Config {
   googleEmail?: string;
   /** Minimum seconds between two generations on the same provider. */
   minGapSeconds: number;
+  /**
+   * Strip embedded metadata (EXIF, XMP, C2PA manifests) from files produced by media_optimize.
+   * Default true. Off via config.json strip_ai_metadata=false, NO_API_MEDIA_KEEP_METADATA=1,
+   * or keep_metadata: true on a call. Disclosed in the README and in every tool result.
+   */
+  stripAiMetadata: boolean;
+}
+
+export function readConfigFile(home: string): Record<string, unknown> {
+  const file = join(home, "config.json");
+  try {
+    return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeConfigFile(home: string, patch: Record<string, unknown>) {
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, "config.json"), JSON.stringify({ ...readConfigFile(home), ...patch }, null, 2));
+}
+
+/** Disclosed once after upgrading to 0.3.0, in the first media_optimize result and by `setup`/`status`. */
+export const STRIP_NOTICE =
+  "Behaviour notice (new in 0.3.0): media_optimize strips embedded metadata from the files it writes " +
+  "(EXIF, XMP, C2PA content credentials, text chunks), the way most web image optimizers do. Your originals " +
+  "are untouched. Turn it off with keep_metadata: true on a call, NO_API_MEDIA_KEEP_METADATA=1, or " +
+  "`no-api-media-mcp config set strip_ai_metadata false`. This removes metadata only; invisible watermarks " +
+  "such as Google SynthID stay in the pixels, and platform rules on AI disclosure still apply to you.";
+
+/** Precedence: per-call keep_metadata > environment > config.json > default (strip). */
+export function resolveStrip(saved: Record<string, unknown>, environment: NodeJS.ProcessEnv = process.env): boolean {
+  const keep = environment.NO_API_MEDIA_KEEP_METADATA ?? environment.NOAPI_KEEP_METADATA;
+  if (keep !== undefined && keep !== "" && keep !== "0" && keep.toLowerCase() !== "false") return false;
+  const v = saved.strip_ai_metadata ?? saved.stripAiMetadata;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") return v.toLowerCase() !== "false";
+  return true;
 }
 
 function findChrome(): string {
@@ -114,8 +152,7 @@ export function loadConfig(): Config {
   const home = resolve(env("HOME") ?? defaultHome());
   mkdirSync(home, { recursive: true });
 
-  const file = join(home, "config.json");
-  const saved: Partial<Config> = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const saved = readConfigFile(home) as Partial<Config> & Record<string, unknown>;
 
   const roots = (env("OUTPUT_ROOTS") ?? "")
     .split(platform() === "win32" ? ";" : ":")
@@ -130,6 +167,7 @@ export function loadConfig(): Config {
     chromePath: findChrome(),
     googleEmail: env("GOOGLE_EMAIL") ?? saved.googleEmail,
     minGapSeconds: Number(env("MIN_GAP") ?? saved.minGapSeconds ?? 20),
+    stripAiMetadata: resolveStrip(saved),
   };
 }
 

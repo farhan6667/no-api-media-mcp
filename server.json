@@ -7,13 +7,13 @@
     "url": "https://github.com/farhan6667/no-api-media-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "no-api-media-mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },
@@ -45,6 +45,12 @@
         {
           "name": "NOAPI_CHROME",
           "description": "Path to Google Chrome if not auto-detected",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NO_API_MEDIA_KEEP_METADATA",
+          "description": "Set to 1 to keep embedded metadata (EXIF/XMP/C2PA) in media_optimize output instead of stripping it",
           "isRequired": false,
           "isSecret": false
         }

@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { Browser } from "./browser.js";
-import { loadConfig, readState, trustSystemCertificates, writeState } from "./config.js";
+import { loadConfig, readConfigFile, readState, STRIP_NOTICE, trustSystemCertificates, writeConfigFile, writeState } from "./config.js";
 import { optimizeImage, optimizeVideo } from "./optimize.js";
 import { chatgptImage, chatgptLastReply, chatgptStatus } from "./providers/chatgpt.js";
 import { codexImage, codexStatus } from "./providers/codex.js";
@@ -36,12 +36,37 @@ if (process.argv[2] === "login") {
   await runSetup(cfg, browser, VERSION, ["--services", services.join(",")]);
   process.exit(0);
 }
+if (process.argv[2] === "config") {
+  const [, , , action, key, value] = process.argv;
+  const KEYS = ["strip_ai_metadata"];
+  if (action === "set") {
+    if (!KEYS.includes(key ?? "")) {
+      process.stderr.write(`Unknown key "${key}". Keys: ${KEYS.join(", ")}\n`);
+      process.exit(2);
+    }
+    const v = (value ?? "").toLowerCase();
+    if (v !== "true" && v !== "false") {
+      process.stderr.write(`Value must be true or false, got "${value}"\n`);
+      process.exit(2);
+    }
+    writeConfigFile(cfg.home, { [key!]: v === "true" });
+    process.stdout.write(`${key} = ${v}\n${key === "strip_ai_metadata" && v === "false" ? "media_optimize will now keep embedded metadata (EXIF/XMP/C2PA) where re-encoding can carry it.\n" : ""}`);
+  } else {
+    const env = process.env.NO_API_MEDIA_KEEP_METADATA ?? process.env.NOAPI_KEEP_METADATA;
+    const file = readConfigFile(cfg.home);
+    const source = env !== undefined ? `environment (NO_API_MEDIA_KEEP_METADATA=${env})` : file.strip_ai_metadata !== undefined ? "config.json" : "default";
+    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nconfig file: ${join(cfg.home, "config.json")}\n`);
+  }
+  process.exit(0);
+}
 if (process.argv[2] === "help" || process.argv[2] === "--help") {
   process.stdout.write(
     `no-api-media-mcp ${VERSION}\n\n` +
       "  npx no-api-media-mcp setup            check everything, open the sign-in window, print client config\n" +
       "  npx no-api-media-mcp login [services] sign in again: login google, login chatgpt, or login chatgpt,google\n" +
       "  npx no-api-media-mcp status           show which accounts are ready, without opening a window\n" +
+      "  npx no-api-media-mcp config           show settings (strip_ai_metadata and where it comes from)\n" +
+      "  npx no-api-media-mcp config set strip_ai_metadata false   keep embedded metadata in optimized files\n" +
       "  npx no-api-media-mcp --version\n\n" +
       "Without a command it runs as an MCP server over stdio (that's what your AI client starts).\n",
   );
@@ -51,6 +76,14 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   process.stdout.write(`${VERSION}\n`);
   process.exit(0);
 }
+/** Shown once after upgrading to 0.3.0: in the first media_optimize result, and by `setup`/`status`. */
+function firstTimeNotice(): string | undefined {
+  if (readState(cfg).stripNoticeShown) return undefined;
+  writeState(cfg, { stripNoticeShown: "1" });
+  return STRIP_NOTICE;
+}
+if (!readState(cfg).stripNoticeShown) log("NOTICE:", STRIP_NOTICE);
+
 const gate = new JobGate(cfg.minGapSeconds * 1000);
 // Local edits (ffmpeg, rembg) touch no website, so they skip the human-pace gap but still run one at a time.
 const localGate = new JobGate(0);
@@ -68,6 +101,7 @@ When the user asks for any image or video for their project, do this without ask
 5. Look at every result yourself and score it against the brief's critique list. Rewrite the prompt for the exact failures and retry, at most 3 rounds.
 6. Show the user a shortlist with one line of reasoning each before placing anything, unless they told you to just do it.
 7. media_optimize the winner into the real asset folder, wire it into the code with width, height and real alt text, then check the page.
+   media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
 const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
@@ -762,12 +796,16 @@ server.registerTool(
     title: "Shrink an image or video for the web without visible loss",
     description:
       "Images to WebP, videos to H.264 with faststart. Raises quality until SSIM (similarity to the original) reaches the target, " +
-      "so the size drops but the picture does not visibly change. The original is kept untouched.",
+      "so the size drops but the picture does not visibly change. The original is kept untouched. " +
+      "Behaviour notice: by default the output has embedded metadata stripped (EXIF, XMP, C2PA content credentials, text chunks), " +
+      "like most web image optimizers; the result lists what was removed. Pass keep_metadata: true to keep what re-encoding can carry. " +
+      "Invisible watermarks such as SynthID are never touched.",
     inputSchema: {
       input_path: z.string().max(500),
       output_path: z.string().max(500).optional().describe("Default: same folder, .webp for images, -web.mp4 for videos"),
       max_width: z.number().int().min(64).max(7680).optional(),
       keep_audio: z.boolean().default(false),
+      keep_metadata: z.boolean().default(false).describe("true: don't strip embedded metadata from the output (EXIF/XMP/C2PA). Default follows config strip_ai_metadata (on)."),
       overwrite: z.boolean().default(false),
     },
   },
@@ -793,10 +831,12 @@ server.registerTool(
       mkdirSync(dirname(out), { recursive: true });
       const p = progress(extra, "optimize");
       try {
+        const strip = a.keep_metadata ? false : cfg.stripAiMetadata;
         const r = isVideo
-          ? await optimizeVideo(input, out, { maxWidth: a.max_width, keepAudio: a.keep_audio })
-          : await optimizeImage(input, out, a.max_width);
-        return ok({ ...r, output: relative(root, r.output) });
+          ? await optimizeVideo(input, out, { maxWidth: a.max_width, keepAudio: a.keep_audio, strip })
+          : await optimizeImage(input, out, a.max_width, undefined, strip);
+        const notice = firstTimeNotice();
+        return ok({ ...r, output: relative(root, r.output), ...(notice ? { notice } : {}) });
       } finally {
         p.done();
       }

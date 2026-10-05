@@ -31,6 +31,7 @@ This server holds a logged-in browser session for accounts people pay for. That 
 - Chrome encrypts its cookies with your operating-system account (DPAPI on Windows, Keychain on macOS). Any program running as you can ask for them; that's true of your normal Chrome too.
 - The Higgsfield CLI binary (`hf.exe`) is not Authenticode-signed. Its npm installer downloads it from Higgsfield's GitHub releases and checks a SHA-256. We verified the release tarball against Higgsfield's `checksums.txt` for 1.1.26.
 - Only one server process can use the profile at a time. A second one gets a clear "profile already open" error.
+- `media_optimize` strips embedded metadata (EXIF, XMP, C2PA content credentials) from the files it writes, by default and with a report. That is a privacy feature (prompts, software and timestamps don't ship with your site) and a transparency trade-off: viewers lose the provenance badge. Originals keep their manifests, the switch is documented in the README, and invisible watermarks are never touched.
 
 ## Tests
 

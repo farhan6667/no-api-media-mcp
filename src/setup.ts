@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { Browser } from "./browser.js";
-import type { Config } from "./config.js";
+import { readState, STRIP_NOTICE, writeState, type Config } from "./config.js";
 import { chatgptStatus } from "./providers/chatgpt.js";
 import { codexStatus } from "./providers/codex.js";
 import { flowStatus } from "./providers/google.js";
@@ -44,6 +44,12 @@ export async function runSetup(cfg: Config, browser: Browser, version: string, a
   say();
   say(row("Private profile", cfg.profileDir));
   say(row("Output root", cfg.outputRoots.join(", ")));
+  say(row("Strip metadata", cfg.stripAiMetadata ? "on (media_optimize output; config set strip_ai_metadata false to keep)" : "off"));
+  if (!readState(cfg).stripNoticeShown) {
+    say();
+    say(STRIP_NOTICE);
+    writeState(cfg, { stripNoticeShown: "1" });
+  }
   say();
 
   if (!noLogin) {

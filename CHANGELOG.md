@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 (2026-10-06)
+
+**Behaviour change.** `media_optimize` now strips embedded metadata from the files it writes, by default, and says so.
+
+- Images: PNG `caBX` (C2PA), `iTXt`/`tEXt`/`zTXt`, `eXIf`; JPEG APP1 (EXIF/XMP), APP11 (JUMBF/C2PA), APP13 (Photoshop/IPTC), COM; WebP `EXIF`, `XMP`, `C2PA` chunks with the VP8X flags corrected. Pixels, colour profile and dimensions are untouched.
+- Videos: `-map_metadata -1 -map_chapters -1`, then the output is inspected for a C2PA `uuid` box; if one survives it is trimmed (when it trails the media data) or the container is re-muxed.
+- Every result carries a `metadata` block: `stripped`, `removed`, `kept`, and a note when something could not be removed or when stripping was off.
+- Off switches: `keep_metadata: true` per call, `NO_API_MEDIA_KEEP_METADATA=1`, or `config set strip_ai_metadata false` (new `config` CLI command). Precedence: call, environment, config file, default.
+- One-time notice after upgrading: in the first `media_optimize` result and in `setup` / `status`.
+- Note: 0.2 already dropped this metadata silently as a side effect of re-encoding to WebP/H.264. Nothing here touches invisible watermarks such as SynthID, and the README says so plainly.
+
 ## 0.2.0 (2026-10-06)
 
 A built-in, local media studio. Generation is unchanged.

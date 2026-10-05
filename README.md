@@ -21,6 +21,15 @@
 
 <p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/workflow.webp" width="100%" alt="Overview: your AI client (Claude Code, Cursor, Windsurf) talks to the no-api-media-mcp server, which uses your AI subscriptions (ChatGPT, Google AI Pro / Flow, Gemini, Higgsfield, Grok) and saves generated images and videos in your project. Features: project-aware generation, images and videos, designer-grade prompts, auto save to project, credit limits, flexible providers"></p>
 
+## Behaviour notice: metadata is stripped from optimized files
+
+Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes: EXIF, XMP, text chunks and **C2PA content credentials** (the signed manifest that ChatGPT, Codex, Google Flow, Gemini and Veo embed, and that platforms such as LinkedIn turn into a "Content credentials" badge). This is what most web image optimizers and CDNs do, and in fact 0.2 already dropped it as a silent side effect of re-encoding. 0.3 makes it explicit: every result lists what was removed, and you can turn it off.
+
+- **Your originals are never touched.** Generated files in `.ai-media/` keep their manifests; only the optimized copy is stripped.
+- **Turn it off** in any of three ways: `keep_metadata: true` on a call, the environment variable `NO_API_MEDIA_KEEP_METADATA=1`, or `node dist/src/index.js config set strip_ai_metadata false`.
+- **What it does not do.** This removes embedded *metadata* only. It does **not** remove invisible watermarks such as Google SynthID, which live in the pixels, so platforms and detectors may still identify the AI origin. It is not a way to pass AI images off as real photographs. You are responsible for the rules of the platforms you post to and for any disclosure requirements that apply to you.
+- A signed C2PA manifest cannot survive re-encoding anyway (it is bound to the original bytes), so with `keep_metadata: true` the result is honest about what the encoder lost rather than copying an invalid manifest.
+
 ## Features
 
 - **Images and videos from your own plans**: GPT Image (ChatGPT via Codex), Nano Banana and Veo 3.1 (Google Flow), Gemini, Higgsfield (Seedance, Kling and more), Grok
@@ -210,7 +219,7 @@ codex mcp add no-api-media -- node /full/path/to/no-api-media-mcp/dist/src/index
 | `image_generate` | Makes images with `codex`, `chatgpt`, `flow`, `gemini`, `higgsfield`, `grok` or your own site |
 | `video_quote` | Exact credit cost for a Flow or Higgsfield job, generates nothing |
 | `video_generate` | Veo 3.1 / Omni in Flow, Seedance / Kling in Higgsfield, or Grok, with a credit cap |
-| `media_optimize` | Image to WebP, video to H.264, smaller with no visible change |
+| `media_optimize` | Image to WebP, video to H.264, smaller with no visible change. Strips embedded metadata by default and reports it (see the behaviour notice); `keep_metadata: true` to keep |
 | `background_remove` | Transparent cutout, local BiRefNet models via rembg |
 | `video_edit` | Trim, reframe, speed, fade, mute, audio, poster frame, GIF, text, logo, subtitles, join |
 | `social_sizes` | Every social and icon size from one image |
@@ -242,6 +251,8 @@ codex mcp add no-api-media -- node /full/path/to/no-api-media-mcp/dist/src/index
 | `node dist/src/index.js login google` | Sign in to one service again (`google`, `chatgpt`, or `chatgpt,google`) |
 | `node dist/src/index.js status` | Show which accounts are ready, without opening a window |
 | `node dist/src/index.js --version` | Print the version |
+| `node dist/src/index.js config` | Show `strip_ai_metadata` and where its value comes from |
+| `node dist/src/index.js config set strip_ai_metadata false` | Keep embedded metadata in optimized files (`true` to strip again) |
 | `node dist/src/index.js help` | List these commands |
 | `codex login status` | Check the Codex CLI is signed in with ChatGPT |
 | `higgsfield workspace list` | List Higgsfield workspaces to pick one |
@@ -280,6 +291,7 @@ All optional.
 | `NOAPI_OUTPUT_ROOTS` | the folder the client starts the server in | Folders the server may write to |
 | `NOAPI_GOOGLE_EMAIL` | first signed-in account | Which Google account to use |
 | `NOAPI_MIN_GAP` | `20` | Seconds between two generations on one provider |
+| `NO_API_MEDIA_KEEP_METADATA` | unset | `1` keeps embedded metadata in `media_optimize` output. Same as `strip_ai_metadata=false` in `config.json`; the environment wins |
 | `NOAPI_CHROME`, `NOAPI_FFMPEG`, `NOAPI_CODEX_JS`, `NOAPI_HIGGSFIELD`, `NOAPI_REMBG` | auto-detected | Binary locations |
 
 ## Add another site without code

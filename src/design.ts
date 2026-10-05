@@ -6,7 +6,7 @@
  * This is deterministic text, no model call: the client's own model does the thinking, guided by it.
  */
 
-export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "background-video", "product-video"] as const;
+export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "infographic", "poster", "background-video", "product-video"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
 
 export interface Brand {
@@ -205,7 +205,146 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
     aspect: "16:9",
     finish: "media_optimize.",
   },
+  infographic: {
+    goal: "One rich, premium graphic that explains the whole product at a glance: what it is, how it works, why it's good.",
+    principles: [
+      "A clear reading order: headline and logo, then the flow (input to output), then the key benefits",
+      "Real, short, correctly spelled text. Pass every word in exact_text",
+      "Glossy, glowing, high-end look with depth, panels and icons, not flat clip-art",
+      "Consistent icon style and generous spacing so it doesn't feel crowded",
+    ],
+    directions: [
+      {
+        name: "Product overview",
+        idea: "Hero logo, a left-to-right flow diagram, and a row of benefit cards.",
+        prompt: (s) => `A premium product infographic for ${s}: the logo and headline at the top, a glowing left-to-right flow diagram in the middle showing how it works, and a row of feature cards with icons and one-line descriptions at the bottom. Dark navy background, neon-glass panels with soft glow, crisp modern sans-serif type.`,
+      },
+      {
+        name: "Before and after",
+        idea: "Split layout: the painful old way versus the new way.",
+        prompt: (s) => `A premium before/after infographic for ${s}: left side shows the old frustrating way in muted greys, right side shows the new way bright and glowing, with short labels and a clear arrow between them.`,
+      },
+    ],
+    critique: [
+      "Is every word spelled exactly right? Any garbled text fails.",
+      "Can someone understand the product in five seconds?",
+      "Does it look like a polished launch graphic, not a slide template?",
+      "Is it readable when shrunk to a phone screen?",
+    ],
+    provider: "codex (GPT Image renders text best), then flow (Nano Banana 2)",
+    aspect: "16:9",
+    finish: "media_optimize to WebP; keep the full-size original for print.",
+  },
+  poster: {
+    goal: "A launch or social poster that stops the scroll and carries a short, exact message.",
+    principles: ["One headline, one sub-line, one call to action", "Big logo or hero object", "Premium glow, depth and contrast", "Exact text only"],
+    directions: [
+      {
+        name: "Launch poster",
+        idea: "Logo on top, big headline, platform chips, call to action at the bottom.",
+        prompt: (s) => `A premium portrait launch poster for ${s}: the logo large at the top, a bold two-line headline, a glowing pill with the key promise, a row of small chips for supported platforms, and a call-to-action bar at the bottom. Dark background with neon blue, cyan and violet glow, glossy 3D glass icons, crisp modern type.`,
+      },
+      {
+        name: "Scene poster",
+        idea: "A cinematic 3D scene with the headline over it.",
+        prompt: (s) => `A cinematic premium poster for ${s}: a glowing 3D scene that shows the product in action, with the headline in large clean type over a calm area of the image and a short call to action at the bottom.`,
+      },
+    ],
+    critique: ["Exact text, spelled right?", "Readable as a phone thumbnail?", "Does it feel premium and exciting, not template-like?"],
+    provider: "codex (GPT Image), then flow",
+    aspect: "3:4",
+    finish: "Export 1080x1350 for LinkedIn/Instagram feed, 1200x627 for link previews.",
+  },
 };
+
+/** Assets where words are part of the design. Everywhere else the model is told to leave text out. */
+const TEXT_ASSETS = new Set<AssetType>(["infographic", "poster", "social-post", "banner"]);
+
+/** What the project is and why the asset is needed. Models do far better with this story than with keyword lists. */
+export interface Context {
+  /** Project or product name. */
+  project?: string;
+  /** One or two sentences on what it does, in plain words. */
+  about?: string;
+  /** Who will see it. */
+  audience?: string;
+  /** Where it goes: "the README header on GitHub", "the hero of the landing page", "a LinkedIn launch post". */
+  usage?: string;
+  /** What it should achieve: "make developers instantly get the idea and want to star the repo". */
+  goal?: string;
+  /** Words that must appear, exactly. Only used for text assets. */
+  exactText?: string[];
+}
+
+const DEFAULT_USAGE: Record<AssetType, string> = {
+  logo: "as the brand mark on the website, GitHub and social profiles",
+  "app-icon": "as the app icon on phones and in app stores",
+  hero: "as the large hero image at the top of the website",
+  illustration: "as an illustration inside the website's content",
+  "product-shot": "to show the product on the website and in listings",
+  "social-post": "as a social media post",
+  banner: "as a wide banner with text over it",
+  "background-video": "as a looping background video behind the website's headline",
+  "product-video": "as a short product clip on the website and social media",
+  infographic: "to explain the whole product in one image on the README, website and social media",
+  poster: "as a launch post on LinkedIn and other social feeds",
+};
+
+const ARTICLE: Record<AssetType, string> = {
+  logo: "a logo",
+  "app-icon": "an app icon",
+  hero: "a hero image",
+  illustration: "an illustration",
+  "product-shot": "a product image",
+  "social-post": "a social media post",
+  banner: "a banner",
+  "background-video": "a background video",
+  "product-video": "a product video",
+  infographic: "an infographic",
+  poster: "a poster",
+};
+
+const QUALITY: Record<NonNullable<Style["tier"]>, string> = {
+  luxury: "It has to look luxurious and expensive, like a campaign from a high-end fashion or jewellery house: rich, calm, refined, every detail deliberate.",
+  premium: "It has to look premium and high-end, like a launch visual from a top design studio or a big tech keynote: rich lighting, depth, glow where it fits, crisp detail, nothing cheap, flat or clip-art.",
+  playful: "It should feel joyful and polished, like a top consumer app's marketing: bright, friendly, high production value.",
+  corporate: "It should look trustworthy and polished, like a leading enterprise brand: clean, confident, high production value.",
+  minimal: "It should feel refined and minimal, like a premium design-led brand: calm, precise, beautifully lit.",
+  modest: "It should feel dignified, peaceful and premium, suitable for a faith or community audience: modest, respectful, beautifully lit, with no music instruments, alcohol or immodest imagery.",
+  editorial: "It should look like a premium magazine feature: considered, natural, beautifully composed.",
+};
+
+/** Drop the keyword-list leftovers ("Avoid: a, b, c", "strict palette:") that make modern models go flat. */
+function soften(visual: string): string {
+  return visual
+    .replace(/\s*Avoid:[^.]*\.?/g, "")
+    .replace(/strict palette:/g, "brand colours")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Write the prompt the way a person briefs a designer: what the project is, where this goes, why, how good it must look. */
+function narrative(asset: AssetType, visual: string, brand: Brand, style: Style, ctx: Context): string {
+  const name = ctx.project ?? brand.name;
+  const lines: string[] = [];
+  lines.push(`I'm making ${ARTICLE[asset]} for ${name ?? "my project"}${ctx.about ? `. ${ctx.about.replace(/\.$/, "")}.` : "."}`);
+  const who = ctx.audience ?? brand.audience;
+  lines.push(`It will be used ${ctx.usage ?? DEFAULT_USAGE[asset]}${who ? `, and the people seeing it are ${who}` : ""}.`);
+  if (ctx.goal) lines.push(`The goal: ${ctx.goal.replace(/\.$/, "")}.`);
+  lines.push(QUALITY[style.tier ?? "premium"]);
+  lines.push(`What I have in mind: ${soften(visual)}`);
+  if (brand.colors?.length) lines.push(`Use the brand colours ${brand.colors.join(", ")} as the main palette.`);
+  if (TEXT_ASSETS.has(asset) || (asset === "logo" && ctx.exactText?.length)) {
+    if (ctx.exactText?.length) {
+      lines.push(`Include exactly this text, spelled exactly like this, in clean modern type: ${ctx.exactText.map((t) => `"${t}"`).join(", ")}. No other words.`);
+    } else {
+      lines.push("Keep any text short and spell it correctly.");
+    }
+  } else {
+    lines.push("Don't put any words, letters or third-party logos in the image.");
+  }
+  return lines.join(" ");
+}
 
 export interface Style {
   tier?: "luxury" | "premium" | "playful" | "corporate" | "minimal" | "modest" | "editorial";
@@ -275,15 +414,17 @@ function styled(prompt: string, asset: AssetType, s: Style): string {
   return `${prompt} ${parts.join(" ")}`;
 }
 
-export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}) {
+export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}) {
   const p = PLAYBOOKS[asset];
-  const extraCritique = style.tier ? [TIER_STYLE[style.tier].critique] : [];
+  // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
+  const s: Style = { ...style, tier: style.tier ?? "premium" };
+  const extraCritique = [TIER_STYLE[s.tier!].critique];
   return {
     asset,
-    style,
+    style: s,
     goal: p.goal,
     principles: p.principles,
-    directions: p.directions.map((d) => ({ name: d.name, idea: d.idea, prompt: styled(d.prompt(subject, brand), asset, style) })),
+    directions: p.directions.map((d) => ({ name: d.name, idea: d.idea, prompt: narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx) })),
     critique: [...p.critique, ...extraCritique],
     recommended: { provider: p.provider, aspect: p.aspect },
     process: [

@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "playwright-core";
 import { assertNoWall, fetchMedia, sleep, StopWaiting, waitFor } from "../browser.js";
-import { maskAccount } from "../safety.js";
+import { log, maskAccount } from "../safety.js";
 
 const FLOW = "https://flow.google.com";
 const GEMINI = "https://gemini.google.com";
 // Generated media is served from Google's own hosts; anything else on the page is ignored.
-const GOOGLE_MEDIA_HOSTS = ["googleusercontent.com", "google.com", "gstatic.com", "ggpht.com", "googleapis.com"];
+const GOOGLE_MEDIA_HOSTS = ["googleusercontent.com", "google.com", "gstatic.com", "ggpht.com", "googleapis.com", "flow-content.google"];
 
 export type FlowModel = "nano-banana-2" | "veo-lite" | "veo-fast" | "veo-quality" | "omni-flash";
 export type Aspect = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
@@ -183,24 +183,53 @@ export async function flowGenerate(
     const tile = page.locator(`[data-noapi-tile="${i}"]`);
     await tile.scrollIntoViewIfNeeded().catch(() => undefined);
     await tile.hover();
-    await sleep(400);
-    await page.locator(`[data-noapi-dl="${i}"]`).click();
-    await page.getByRole("menuitem", { name: "Download", exact: true }).click();
-    await sleep(500);
-    const items = page.getByRole("menuitem");
-    const labels = await items.allInnerTexts();
-    let idx = labels.findIndex((l) => /original size/i.test(l));
-    if (opts.quality === "upscaled") {
-      const up = labels.findIndex((l) => /1080p|2k/i.test(l) && /upscaled/i.test(l));
-      const any = labels.findIndex((l) => /upscaled/i.test(l));
-      idx = up >= 0 ? up : any >= 0 ? any : idx;
+    await sleep(800);
+    // Remember the tile's own media URL (the <video> that appears on hover, else the image) as a fallback.
+    const direct = await tile.evaluate((img) => {
+      let el: HTMLElement | null = img as HTMLElement;
+      for (let k = 0; k < 8 && el; k++, el = el.parentElement) {
+        const v = el.querySelector("video") as HTMLVideoElement | null;
+        if (v && (v.currentSrc || v.src)) return v.currentSrc || v.src;
+      }
+      return (img as HTMLImageElement).src;
+    });
+    let got: Buffer | undefined;
+    // "Original size" is exactly what the tile already shows, so fetch it directly. Going through Flow's
+    // Download menu makes current Chrome crash under automation; keep that path only for upscaled files.
+    if (opts.quality === "original" && direct) {
+      got = await fetchMedia(page, direct, GOOGLE_MEDIA_HOSTS).catch((e) => {
+        log(`flow: direct fetch failed for tile ${i}: ${(e as Error).message} (${direct.slice(0, 40)})`);
+        return undefined;
+      });
     }
-    if (idx < 0) throw new Error("Flow's download menu changed; could not find the size option.");
-    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 5 * 60_000 }), items.nth(idx).click()]);
-    const path = await dl.path();
-    if (!path) throw new Error("Download did not complete.");
-    files.push(readFileSync(path));
-    await dl.delete().catch(() => undefined);
+    if (!got) try {
+      await page.locator(`[data-noapi-dl="${i}"]`).click();
+      await page.getByRole("menuitem", { name: "Download", exact: true }).click();
+      await sleep(500);
+      const items = page.getByRole("menuitem");
+      const labels = await items.allInnerTexts();
+      let idx = labels.findIndex((l) => /original size/i.test(l));
+      if (opts.quality === "upscaled") {
+        const up = labels.findIndex((l) => /1080p|2k/i.test(l) && /upscaled/i.test(l));
+        const any = labels.findIndex((l) => /upscaled/i.test(l));
+        idx = up >= 0 ? up : any >= 0 ? any : idx;
+      }
+      if (idx < 0) throw new Error("download menu changed");
+      const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 5 * 60_000 }), items.nth(idx).click()]);
+      const path = await dl.path();
+      if (path) got = readFileSync(path);
+      await dl.delete().catch(() => undefined);
+    } catch {
+      // Flow sometimes hands the download to a short-lived popup and Playwright loses it.
+      await page.keyboard.press("Escape").catch(() => undefined);
+    }
+    if (!got) {
+      if (!direct || (opts.quality === "upscaled" && !isVideo)) {
+        throw new Error("Generated, but Flow's download didn't complete. The files are in your Flow project; try again or download them there.");
+      }
+      got = await fetchMedia(page, direct, GOOGLE_MEDIA_HOSTS);
+    }
+    files.push(got);
     await sleep(1500);
   }
   return { files, credits: q.credits, project: q.project, account: q.account };

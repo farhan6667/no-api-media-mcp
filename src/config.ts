@@ -1,6 +1,26 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import tls from "node:tls";
+
+/**
+ * Trust the operating system's certificate store as well as Node's bundled one, exactly like Chrome does.
+ * Without this, media downloads fail on machines behind a corporate proxy or antivirus that inspects TLS
+ * ("unable to verify the first certificate"). Needs a recent Node 22/24; older Node keeps its default.
+ */
+export function trustSystemCertificates() {
+  const t = tls as typeof tls & {
+    getCACertificates?: (type: string) => string[];
+    setDefaultCACertificates?: (certs: string[]) => void;
+  };
+  if (!t.getCACertificates || !t.setDefaultCACertificates) return;
+  try {
+    const all = new Set([...t.getCACertificates("default"), ...t.getCACertificates("system")]);
+    t.setDefaultCACertificates([...all]);
+  } catch {
+    /* keep Node's default store */
+  }
+}
 
 export interface Config {
   /** Where the private browser profile and state live. Never inside a repo. */

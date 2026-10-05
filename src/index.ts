@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { Browser } from "./browser.js";
-import { loadConfig, readState, writeState } from "./config.js";
+import { loadConfig, readState, trustSystemCertificates, writeState } from "./config.js";
 import { optimizeImage, optimizeVideo } from "./optimize.js";
 import { chatgptImage, chatgptLastReply, chatgptStatus } from "./providers/chatgpt.js";
 import { codexImage, codexStatus } from "./providers/codex.js";
@@ -20,6 +20,7 @@ import { projectProfile, TIERS } from "./project.js";
 
 // Single source of truth for the version: package.json (two levels up from dist/src).
 const VERSION: string = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version;
+trustSystemCertificates();
 const cfg = loadConfig();
 const browser = new Browser(cfg);
 
@@ -50,7 +51,23 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   process.exit(0);
 }
 const gate = new JobGate(cfg.minGapSeconds * 1000);
-const server = new McpServer({ name: "no-api-media-mcp", version: VERSION });
+/**
+ * Sent to every MCP client when it connects, so the user can say "make a hero image for this site"
+ * and the agent already knows the whole workflow. No prompt engineering on the user's side.
+ */
+const INSTRUCTIONS = `no-api-media makes images and videos with the user's own AI subscriptions. Never ask the user for an API key.
+
+When the user asks for any image or video for their project, do this without asking them to write prompts:
+1. Call project_profile. Open the reference images it lists to see the current look.
+2. Decide the slots yourself: where the asset goes (hero, OG image, feature icons, background video...), size, file path in the project's asset folder.
+3. Call design_brief like a creative director briefing a designer: asset type, subject, brand colours, style tier, and a full "context" (project name, what it does from project_profile.about, who sees it, where it goes, what it must achieve, and exactText for any words). Quality defaults to premium. If the user named a level ("premium", "glowing", "minimal", "luxury 3D"), that wins.
+4. Generate the brief's directions with image_generate. Designs with words (infographic, poster, logo with wordmark) go to "codex" first (GPT Image renders text best), then "flow". Photo and 3D scenes go to "flow" (Nano Banana 2, 0 credits on AI Pro). Save drafts into .ai-media (no output_path).
+5. Look at every result yourself and score it against the brief's critique list. Rewrite the prompt for the exact failures and retry, at most 3 rounds.
+6. Show the user a shortlist with one line of reasoning each before placing anything, unless they told you to just do it.
+7. media_optimize the winner into the real asset folder, wire it into the code with width, height and real alt text, then check the page.
+For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
+
+const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
 const specs = loadSpecs(cfg.home);
 if (specs.errors.length) log("ignored provider specs:", specs.errors.join("; "));
 
@@ -222,8 +239,9 @@ server.registerTool(
     title: "Art direction before generating",
     description:
       "Call this BEFORE image_generate or video_generate. Returns designer-grade guidance for the asset type: what good looks like, " +
-      "three genuinely different concept directions with ready prompts, a critique checklist to judge every result, and the iteration process. " +
-      "Read the project's colours, fonts and existing art first and pass them in `brand`.",
+      "concept directions with ready prompts written like a real creative brief, a critique checklist to judge every result, and the iteration process. " +
+      "Fill `context` from project_profile and the conversation: what the project is, where the asset goes and why. That story is what makes results " +
+      "premium instead of generic. Quality defaults to premium. For designs with words (infographic, poster, social post) put every word in context.exactText.",
     inputSchema: {
       asset_type: z.enum(ASSET_TYPES),
       subject: z.string().min(3).max(600).describe("What it should show or express, e.g. 'image and video generation without API keys'"),
@@ -236,9 +254,19 @@ server.registerTool(
           referenceNotes: z.string().max(400).optional().describe("A few words on the project's existing images you looked at"),
         })
         .default({}),
+      context: z
+        .object({
+          project: z.string().max(80).optional(),
+          about: z.string().max(600).optional().describe("What the project does, in plain words (project_profile.about)"),
+          audience: z.string().max(200).optional(),
+          usage: z.string().max(200).optional().describe("Where it goes, e.g. 'the README header on GitHub'"),
+          goal: z.string().max(300).optional().describe("What it must achieve, e.g. 'make developers get the idea in 5 seconds'"),
+          exactText: z.array(z.string().max(120)).max(20).optional().describe("Every word that must appear, spelled exactly"),
+        })
+        .default({}),
     },
   },
-  async (a) => ok(designBrief(a.asset_type, a.subject, a.brand, a.style)),
+  async (a) => ok(designBrief(a.asset_type, a.subject, a.brand, a.style, a.context)),
 );
 
 server.registerTool(

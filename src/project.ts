@@ -12,6 +12,9 @@ export type Tier = (typeof TIERS)[number];
 export type Motion = "3d" | "animated" | "static";
 
 export interface ProjectProfile {
+  /** Project name and a plain description of what it does, for the creative brief. */
+  name?: string;
+  about?: string;
   tier: Tier;
   motion: Motion;
   theme: "dark" | "light" | "unknown";
@@ -154,5 +157,53 @@ export function projectProfile(root: string): ProjectProfile {
     .map((i) => relative(root, i.path));
   if (references.length) evidence.push(`existing images to match: ${references.length}`);
 
-  return { tier, motion, theme, palette, fonts: [...fonts].slice(0, 4), keywords: [...words].slice(0, 12), references, evidence };
+  const { name, about } = describe(root);
+  if (about) evidence.push("description from the project's own text");
+  return { name, about, tier, motion, theme, palette, fonts: [...fonts].slice(0, 4), keywords: [...words].slice(0, 12), references, evidence };
+}
+
+/** Name and one-paragraph description: package.json, then the README's first paragraph, then the site's <title>/meta. */
+function describe(root: string): { name?: string; about?: string } {
+  let name: string | undefined;
+  let about: string | undefined;
+  const clean = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, " ")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/[*_`#>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    name = pkg.name;
+    if (typeof pkg.description === "string" && pkg.description.length > 20) about = pkg.description;
+  } catch {
+    /* no package.json */
+  }
+  for (const f of ["README.md", "readme.md", "README"]) {
+    const p = join(root, f);
+    if (!existsSync(p)) continue;
+    const md = readFileSync(p, "utf8").slice(0, 20_000);
+    name ??= md.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    if (!about) {
+      const para = md
+        .split(/\r?\n\s*\r?\n/)
+        .map(clean)
+        .find((t) => t.length > 60 && !/^(\[!|https?:|npm |git |\||-{3})/.test(t));
+      if (para) about = para.slice(0, 400);
+    }
+    break;
+  }
+  if (!about) {
+    for (const f of ["index.html", join("public", "index.html"), join("src", "index.html")]) {
+      const p = join(root, f);
+      if (!existsSync(p)) continue;
+      const html = readFileSync(p, "utf8");
+      name ??= html.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
+      about = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)/i)?.[1];
+      if (about) break;
+    }
+  }
+  return { name, about: about ? clean(about) : undefined };
 }

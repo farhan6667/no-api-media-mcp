@@ -220,6 +220,6 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 
 <div align="center">
 
-Built by <a href="https://github.com/farhan6667">Syed Farhan Ahmed</a> · <a href="https://nexaforge.eu.cc/">nexaforge.eu.cc</a>
+Built by <a href="https://github.com/farhan6667">Syed Farhan Ahmed</a> · <a href="https://nexaforge.eu.cc/">nexaforge.eu.cc</a> · <a href="https://www.linkedin.com/in/sfa6667">LinkedIn</a> · <a href="https://farhan6667.github.io/portfolio/">Portfolio</a>
 
 </div>

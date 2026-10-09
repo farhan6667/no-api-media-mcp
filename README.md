@@ -10,7 +10,7 @@
 ![Claude Code ready](https://img.shields.io/badge/Claude%20Code-ready-D97757)
 ![No API key](https://img.shields.io/badge/API%20key-not%20needed-14B8A6)
 
-**MCP server that makes images and videos for your projects with the AI subscriptions you already pay for.**<br>
+**no-api-media-mcp is an open source MCP server (Apache-2.0, Node 22+) that lets Claude Code, Cursor, Codex and other MCP clients make images and videos for your projects with the AI subscriptions you already pay for.**<br>
 **No API keys. No second bill.** Uses your own ChatGPT, Google AI Pro, Higgsfield and Grok accounts.
 
 [Features](#features) • [Quick start](#quick-start) • [Connect accounts](#connect-your-accounts) • [Installation](#installation) • [Tools](#tools) • [CLI commands](#cli-commands) • [Troubleshooting](#troubleshooting)
@@ -304,6 +304,32 @@ Put a file in `~/.no-api-media/providers/<id>.json`. Start from [`examples/provi
 - Your password never touches this code, there is no network port, and the server can't write outside your project. The full threat model is in [SECURITY.md](SECURITY.md).
 - Web providers drive the consumer sites the way you would by hand. OpenAI's, Google's and xAI's terms restrict automated use of those sites, so **using them is your call and your account's risk**. The server works at human pace, stops at captchas and sign-in pages, and doesn't hide that it is automation. Official CLIs (Codex, Higgsfield) are the safer routes.
 
+## Frequently asked questions
+
+### How do I generate images and videos in Claude Code without an API key?
+Install this MCP server, then sign in once to ChatGPT, Google (Flow and Gemini), Higgsfield or Grok in the browser window it opens. After that you can ask Claude Code, Cursor or Codex for an image or a video and it uses the plan you already pay for.
+
+### Does it see my password?
+No. You type your password yourself in a normal browser window. The server never asks for it, types it or stores it, and it drives the browser over a pipe, not an open network port.
+
+### Can it bill my API account by accident?
+It is built to prevent that. API key variables are removed from every child process, and Codex only runs when its login status shows a ChatGPT login.
+
+### Which clients and providers does it work with?
+Any MCP client, including Claude Code, Cursor, Codex and Windsurf. Providers are ChatGPT through Codex, Google Flow (Veo and Nano Banana), Gemini, Higgsfield and Grok, plus any other site you describe in a JSON file.
+
+### Does it remove AI watermarks?
+No. `media_optimize` strips embedded metadata (EXIF, XMP and C2PA content credentials) from the files it writes, by default and with a report, and you can switch that off. It never touches invisible watermarks such as SynthID.
+
+### Can it do more than generate?
+Yes. It removes backgrounds locally, edits video with ffmpeg, exports every social media size and shrinks files for the web. The `design_brief` and `design_audit` tools help the model art direct and judge its own results.
+
+### Are the providers fine with this?
+The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Is it free?
+The server is free and open source under Apache-2.0. It uses the AI plans you already have, so it adds no API bill.
+
 ## Contributing
 
 Fixes for broken selectors and new site specs are the most useful help. See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -312,7 +338,7 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 
 - **Bugs, questions, ideas:** open a [GitHub issue](https://github.com/farhan6667/no-api-media-mcp/issues).
 - **Security problems:** use a private security advisory, see [SECURITY.md](SECURITY.md).
-- **Work with NexaForge** (websites, cyber security, IT infrastructure): [nexaforge.services@gmail.com](mailto:nexaforge.services@gmail.com) or [nexaforge.eu.cc/contact](https://nexaforge.eu.cc/contact).
+- **Work with NexaForge** (cyber security, vibe coding, web development and IT infrastructure): [nexaforge.services@gmail.com](mailto:nexaforge.services@gmail.com) or [nexaforge.eu.cc/contact](https://nexaforge.eu.cc/contact).
 - If this saved you an API bill, a star on the repo is the easiest way to say thanks.
 
 ## License

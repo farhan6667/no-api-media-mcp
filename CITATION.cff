@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "no-api-media-mcp"
+abstract: "MCP server that lets Claude Code, Cursor and Codex generate and edit images and videos through the ChatGPT, Google AI Pro, Higgsfield and Grok plans a user already pays for, without API keys."
+type: software
+authors:
+  - family-names: "Ahmed"
+    given-names: "Syed Farhan"
+    affiliation: "NexaForge"
+    email: "nexaforge.services@gmail.com"
+repository-code: "https://github.com/farhan6667/no-api-media-mcp"
+url: "https://nexaforge.eu.cc/"
+license: Apache-2.0
+version: "0.4.0"
+date-released: "2026-10-09"
+keywords:
+  - mcp
+  - model context protocol
+  - claude code
+  - image generation
+  - video generation
+  - no api key
+  - codex
+  - cursor

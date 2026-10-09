@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 (2026-10-10)
+
+- **Learns from its own mistakes.** `design_audit` (with `asset_type`) writes each score sheet to a small local journal. `design_brief` reads it back, and any criterion that fell short at least twice for that asset type becomes advice at the end of every prompt. Nothing is uploaded.
+- **Built-in lessons from real use** (`docs/lessons.md`): 14 short rules, such as never letting the model draw logos or text, keeping the subject centred with margins, and putting a black-background logo on a dark glass plate. The brief adds the ones that fit the asset type and keeps every prompt under the 4000 character limit.
+- **`context.targetAspect`** in `design_brief`: a very wide final crop (for example `3.2:1`) adds guidance to keep the important parts in the middle band.
+- **Draft housekeeping.** Each draft has a status (draft, shortlisted, rejected, used). `design_audit` with `file` marks drafts, and `media_optimize` marks the source as used. Old drafts in `.ai-media` are removed on their own once per session: rejected after 3 days, used (and only if the final file still exists) after 14, untouched after 30. New tool `media_cleanup` (dry run by default). Turn the automatic part off with `config set auto_cleanup false` or `NOAPI_AUTO_CLEANUP=0`. It only touches media files inside `.ai-media`.
+- **Fix: newer Codex CLI.** Codex now keeps the picture in its own `generated_images` folder and refuses to copy it into the sandbox, which made every Codex generation fail. The server now takes the newest image Codex wrote after the run started, from that folder only.
+- Server instructions now tell the model to pass `asset_type` and `file` to the audit, set `targetAspect`, composite real logos and text itself, and put the final file in the project's own images folder.
+- Tests: 126 pass.
+
+
 ## 0.4.0 (2026-10-09)
 
 - New tool `design_audit`: an eight-point eye-catch audit (focal point, thumbnail test, hierarchy, palette, topic cues, brand presence, text accuracy, not template). Ship needs an average of 4 and nothing below 3; missing scores never count as a pass.

@@ -25,6 +25,7 @@ This server holds a logged-in browser session for accounts people pay for. That 
 | Filter injection through user text | Overlay text is written to a file and read with `textfile=` with `expansion=none`, so neither `:` nor `%{...}` in the text can add ffmpeg options or call ffmpeg functions. Colours, sizes, positions and numbers are validated against fixed patterns. Subtitles are copied into a private temp folder under a fixed name. |
 | ffmpeg fetching other files or URLs | Every input gets `-protocol_whitelist file`. Generated backgrounds use `-f lavfi`, which reads nothing. |
 | Background removal leaking images | rembg runs locally on your CPU. The only network use is its one-time model download from the rembg GitHub releases; images never leave the machine. API-key variables are stripped from its environment like every other child process. |
+| Cleanup deleting the wrong files | Draft cleanup only considers real media files inside `<project>/.ai-media`. Symbolic links and junctions are skipped, never followed. Final files in the project are never touched, a "used" draft goes only if its final file still exists, status paths with `..` are refused, and `media_cleanup` is a dry run unless you say otherwise. It can be switched off with `auto_cleanup false`. |
 
 ## Things you should know
 

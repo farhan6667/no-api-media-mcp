@@ -39,6 +39,8 @@ export interface Config {
    * or keep_metadata: true on a call. Disclosed in the README and in every tool result.
    */
   stripAiMetadata: boolean;
+  /** Remove old rejected or used drafts from <project>/.ai-media once per session. Default true. */
+  autoCleanup: boolean;
 }
 
 export function readConfigFile(home: string): Record<string, unknown> {
@@ -68,6 +70,16 @@ export function resolveStrip(saved: Record<string, unknown>, environment: NodeJS
   const keep = environment.NO_API_MEDIA_KEEP_METADATA ?? environment.NOAPI_KEEP_METADATA;
   if (keep !== undefined && keep !== "" && keep !== "0" && keep.toLowerCase() !== "false") return false;
   const v = saved.strip_ai_metadata ?? saved.stripAiMetadata;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") return v.toLowerCase() !== "false";
+  return true;
+}
+
+/** Precedence: environment NOAPI_AUTO_CLEANUP=0, then config.json auto_cleanup, then default (on). */
+export function resolveAutoCleanup(saved: Record<string, unknown>, environment: NodeJS.ProcessEnv = process.env): boolean {
+  const e = environment.NOAPI_AUTO_CLEANUP;
+  if (e !== undefined && e !== "") return !(e === "0" || e.toLowerCase() === "false");
+  const v = saved.auto_cleanup;
   if (typeof v === "boolean") return v;
   if (typeof v === "string") return v.toLowerCase() !== "false";
   return true;
@@ -168,6 +180,7 @@ export function loadConfig(): Config {
     googleEmail: env("GOOGLE_EMAIL") ?? saved.googleEmail,
     minGapSeconds: Number(env("MIN_GAP") ?? saved.minGapSeconds ?? 20),
     stripAiMetadata: resolveStrip(saved),
+    autoCleanup: resolveAutoCleanup(saved),
   };
 }
 

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir, platform } from "node:os";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { homedir, tmpdir, platform } from "node:os";
 import { join } from "node:path";
 import { env, extraBinDirs, npmGlobalRoots, scrubbedEnv } from "../config.js";
 
@@ -55,6 +55,46 @@ function run(cmd: string, args: string[], cwd: string, timeoutMs: number, signal
   });
 }
 
+
+const MAX_GENERATED_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Newer Codex versions keep the picture in their own folder (`<codex home>/generated_images/<session>/`) and refuse
+ * to copy it into the sandbox. So if nothing arrived in our folder, take the newest image that Codex wrote after
+ * this run started. Only that folder, only picture files, only files newer than the start time, and the caller
+ * still checks the bytes. A one-job-at-a-time gate keeps another of our own runs from racing it.
+ */
+export function findGeneratedImage(codexHome: string, sinceMs: number): string | undefined {
+  const root = join(codexHome, "generated_images");
+  if (!existsSync(root)) return undefined;
+  let best: { file: string; mtime: number } | undefined;
+  try {
+    for (const session of readdirSync(root)) {
+      const dir = join(root, session);
+      let names: string[] = [];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        continue; // not a folder
+      }
+      for (const name of names) {
+        if (!/\.(png|jpe?g|webp)$/i.test(name)) continue;
+        const file = join(dir, name);
+        const st = statSync(file);
+        if (!st.isFile() || st.size === 0 || st.size > MAX_GENERATED_BYTES) continue;
+        if (st.mtimeMs >= sinceMs && (!best || st.mtimeMs > best.mtime)) best = { file, mtime: st.mtimeMs };
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return best?.file;
+}
+
+function codexHome(): string {
+  return env("CODEX_HOME") ?? join(homedir(), ".codex");
+}
+
 export async function codexStatus(): Promise<{ signedIn: boolean; detail: string }> {
   try {
     const { cmd, pre } = codexCommand();
@@ -71,11 +111,12 @@ export async function codexImage(prompt: string, size?: string, signal?: AbortSi
   if (!st.signedIn) throw new Error(`Codex must be signed in with ChatGPT (not an API key). ${st.detail}`);
   const { cmd, pre } = codexCommand();
   const work = mkdtempSync(join(tmpdir(), "noapi-codex-"));
+  const startedAt = Date.now() - 2000;
   try {
     const task =
       `Use your built-in image generation tool to create exactly one image${size ? ` (${size})` : ""}. ` +
-      `Save it in the current directory as out.png. Do not write or run scripts, do not use any API key, ` +
-      `do not read or touch anything outside this directory. Image description: ${prompt}`;
+      `Save it in the current directory as out.png if the tool allows it, and if it saves the file somewhere else, just leave it there and say so. ` +
+      `Do not write or run scripts, do not use any API key, do not read or touch anything outside this directory. Image description: ${prompt}`;
     const r = await run(
       cmd,
       [...pre, ...CODEX_SAFETY_ARGS, "exec", "-C", work, "-s", "workspace-write", "--skip-git-repo-check", task],
@@ -85,6 +126,8 @@ export async function codexImage(prompt: string, size?: string, signal?: AbortSi
     );
     const file = readdirSync(work).find((f) => /\.(png|jpe?g|webp)$/i.test(f));
     if (!file) {
+      const fallback = findGeneratedImage(codexHome(), startedAt);
+      if (fallback) return { data: readFileSync(fallback), note: "Codex CLI built-in image tool (ChatGPT plan)" };
       if (/out of credits|usage limit|rate limit|quota/i.test(r.out)) {
         throw new Error("Your ChatGPT plan's Codex limit is used up for now. Try provider 'flow' (usually 0 credits) or 'chatgpt', or wait for the limit to reset.");
       }

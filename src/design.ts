@@ -339,6 +339,18 @@ export interface Context {
   goal?: string;
   /** Words that must appear, exactly. Only used for text assets. */
   exactText?: string[];
+  /** The shape the image will finally be cropped to, for example "3.2:1" for a profile banner. */
+  targetAspect?: string;
+}
+
+/** "3.2:1", "16:9" or "3.2" to a width over height number, or undefined. */
+export function parseAspect(text?: string): number | undefined {
+  if (!text) return undefined;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(?::|x|\/)?\s*(\d+(?:\.\d+)?)?\s*$/i.exec(text);
+  if (!m) return undefined;
+  const w = Number(m[1]);
+  const h = m[2] ? Number(m[2]) : 1;
+  return w > 0 && h > 0 ? w / h : undefined;
 }
 
 const DEFAULT_USAGE: Record<AssetType, string> = {
@@ -402,6 +414,10 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   if (cue && asset !== "logo") lines.push(`Make the field obvious without words (${cue.field}): ${cue.cues}.`);
   const tp = thirdPartyRule(name, ctx.about, ctx.goal);
   if (tp) lines.push(tp);
+  const ratio = parseAspect(ctx.targetAspect);
+  if (ratio && ratio > 2.1) {
+    lines.push(`The final crop is very wide (${ctx.targetAspect}). Keep every important element in the middle horizontal band and leave the top and bottom as calm dark space, so nothing important is cut off.`);
+  }
   if (style.look) lines.push(`Overall visual style: ${LOOKS[style.look]}.`);
   if (brand.colors?.length) lines.push(`Use the brand colours ${brand.colors.join(", ")} as the main palette.`);
   if (TEXT_ASSETS.has(asset) || (asset === "logo" && ctx.exactText?.length)) {
@@ -503,7 +519,26 @@ function styled(prompt: string, asset: AssetType, s: Style): string {
   return `${prompt} ${parts.join(" ")}`;
 }
 
-export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}) {
+/** image_generate accepts 4000 characters. Advice is added only while it fits, never cutting the brief itself. */
+export const PROMPT_BUDGET = 3900;
+
+export function withAdvice(base: string, advice: string[]): string {
+  const kept: string[] = [];
+  for (const a of advice) {
+    if ([base, ...kept, a].join(" ").length <= PROMPT_BUDGET) kept.push(a);
+  }
+  return [base, ...kept].join(" ");
+}
+
+export interface BriefExtra {
+  /** One sentence built from the local audit journal: what earlier results of this kind got wrong. */
+  learned?: string;
+  learnedItems?: { criterion: string; average: number; seen: number; advice: string }[];
+  /** Built-in lessons that apply to this asset type. */
+  lessons?: string[];
+}
+
+export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}, extra: BriefExtra = {}) {
   const p = PLAYBOOKS[asset];
   // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
   const s: Style = { ...style, tier: style.tier ?? "premium" };
@@ -513,7 +548,15 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     style: s,
     goal: p.goal,
     principles: p.principles,
-    directions: p.directions.map((d) => ({ name: d.name, idea: d.idea, prompt: narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx) })),
+    directions: p.directions.map((d) => ({
+      name: d.name,
+      idea: d.idea,
+      prompt: withAdvice(narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx), [
+        ...(extra.learned ? [extra.learned] : []),
+        ...(extra.lessons?.length ? [`Rules learned from past results: ${extra.lessons.join(" ")}`] : []),
+      ]),
+    })),
+    learned: extra.learnedItems ?? [],
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

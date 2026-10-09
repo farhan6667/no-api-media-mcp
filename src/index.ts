@@ -16,6 +16,9 @@ import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, hig
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
 import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look } from "./design.js";
+import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
+import { learnedFor, learnedSentence, readJournal, record } from "./learning.js";
+import { lessonsFor } from "./lessons.js";
 import { projectProfile, TIERS } from "./project.js";
 import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
 
@@ -38,7 +41,7 @@ if (process.argv[2] === "login") {
 }
 if (process.argv[2] === "config") {
   const [, , , action, key, value] = process.argv;
-  const KEYS = ["strip_ai_metadata"];
+  const KEYS = ["strip_ai_metadata", "auto_cleanup"];
   if (action === "set") {
     if (!KEYS.includes(key ?? "")) {
       process.stderr.write(`Unknown key "${key}". Keys: ${KEYS.join(", ")}\n`);
@@ -55,7 +58,7 @@ if (process.argv[2] === "config") {
     const env = process.env.NO_API_MEDIA_KEEP_METADATA ?? process.env.NOAPI_KEEP_METADATA;
     const file = readConfigFile(cfg.home);
     const source = env !== undefined ? `environment (NO_API_MEDIA_KEEP_METADATA=${env})` : file.strip_ai_metadata !== undefined ? "config.json" : "default";
-    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nconfig file: ${join(cfg.home, "config.json")}\n`);
+    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nauto_cleanup = ${cfg.autoCleanup}   (old rejected and used drafts in .ai-media are removed after a grace period; NOAPI_AUTO_CLEANUP=0 turns it off)\nconfig file: ${join(cfg.home, "config.json")}\n`);
   }
   process.exit(0);
 }
@@ -102,7 +105,10 @@ When the user asks for any image or video for their project, do this without ask
    Words and numbers that must be exact (a terminal command, a results table, a diagram with labels) are better drawn locally as SVG or HTML and rendered than asked from an image model. Use the image model for the art around them.
    Never generate the user's own logo or a third party's logo. Place the real logo file from the project after generation. A named third-party product (for example a security platform) is shown through colour and motif only, with an "independent project" note on public assets.
 6. Show the user a shortlist with one line of reasoning each before placing anything, unless they told you to just do it.
-7. media_optimize the winner into the real asset folder, wire it into the code with width, height and real alt text, then check the page.
+   Pass asset_type and the draft's file to design_audit, so the server learns what keeps going wrong and a rejected draft can be cleaned up later. design_brief already carries "learned" advice from earlier audits and built-in lessons: follow them on the first try.
+   Always set context.targetAspect to the shape the image will finally be cropped to (a profile banner is about 3.2:1).
+   Compose real logos and text over generated art yourself: a black-background logo goes on a dark glass plate or a feathered mask, never plain screen blending.
+7. media_optimize the winner into the real asset folder (the project's own images folder, never leave a final in .ai-media), wire it into the code with width, height and real alt text, then check the page. Drafts in .ai-media are cleaned up on their own: rejected ones after a few days, used ones after a couple of weeks (media_cleanup shows or does it on demand).
    media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
@@ -204,7 +210,12 @@ function save(buf: Buffer, provider: string, prompt: string, outputPath: string 
   // Paths are returned relative to the project, so the user's home folder name never leaves the machine.
   const entry = { time: new Date().toISOString(), provider, file: relative(root, file), bytes: buf.length, mime: kind.mime, ...size, prompt };
   appendFileSync(join(mediaDir, "manifest.jsonl"), JSON.stringify(entry) + "\n");
-  return entry;
+  // Housekeeping runs before the new file is registered, so it can never touch it.
+  const hk = autoCleanup(root, cfg.autoCleanup);
+  markDraft(root, file, { status: "draft" });
+  return hk
+    ? { ...entry, housekeeping: { removed: hk.removed.length, freedMB: Math.round(hk.freedBytes / 10_485.76) / 100, note: "Old rejected or used drafts in .ai-media were removed. Final files in the project are never touched." } }
+    : entry;
 }
 
 server.registerTool(
@@ -302,11 +313,15 @@ server.registerTool(
           usage: z.string().max(200).optional().describe("Where it goes, e.g. 'the README header on GitHub'"),
           goal: z.string().max(300).optional().describe("What it must achieve, e.g. 'make developers get the idea in 5 seconds'"),
           exactText: z.array(z.string().max(120)).max(20).optional().describe("Every word that must appear, spelled exactly"),
+          targetAspect: z.string().max(20).optional().describe('The shape the image is finally cropped to, e.g. "3.2:1" for a profile banner. Very wide crops get composition guidance'),
         })
         .default({}),
     },
   },
-  async (a) => ok(designBrief(a.asset_type, a.subject, a.brand, a.style, a.context)),
+  async (a) => {
+    const items = learnedFor(readJournal(cfg.home), a.asset_type);
+    return ok(designBrief(a.asset_type, a.subject, a.brand, a.style, a.context, { learned: learnedSentence(items), learnedItems: items, lessons: lessonsFor(a.asset_type) }));
+  },
 );
 
 server.registerTool(
@@ -316,12 +331,59 @@ server.registerTool(
     description:
       "After you have LOOKED at a generated image, score it 0 to 5 on each criterion (focal-point, thumbnail, hierarchy, palette, topic-cues, brand-presence, text-accuracy, not-template) " +
       "and pass the scores here. Returns ship or revise, the weakest points and the exact fix for each. Call with no scores to get the criteria. " +
-      "Be harsh: a generic, flat or template-looking result scores 2 or 3.",
+      "Be harsh: a generic, flat or template-looking result scores 2 or 3. " +
+      "Pass asset_type so the server learns what usually goes wrong and warns you up front next time. " +
+      "Pass file (the draft inside .ai-media) so a revise marks it rejected, which lets it be cleaned up later, and a ship marks it shortlisted.",
     inputSchema: {
       scores: z.record(z.string().max(30), z.number().min(0).max(5)).default({}),
+      asset_type: z.enum(ASSET_TYPES).optional(),
+      file: z.string().max(500).optional().describe("The draft you scored, relative to the project, e.g. .ai-media/codex/banner.png"),
     },
   },
-  async (a) => ok(Object.keys(a.scores).length ? auditScores(a.scores) : { criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })), pass: "average 4 or more, nothing below 3" }),
+  async (a) => {
+    try {
+      if (!Object.keys(a.scores).length) return ok({ criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })), pass: "average 4 or more, nothing below 3" });
+      const result = auditScores(a.scores);
+      if (a.asset_type) record(cfg.home, { asset: a.asset_type, scores: a.scores, average: result.average, verdict: result.verdict });
+      let marked: string | undefined;
+      if (a.file) {
+        const root = realpathSync(cfg.outputRoots[0]);
+        const abs = realpathSync(resolve(root, a.file));
+        if (isInside(abs, join(root, ".ai-media")) && markDraft(root, abs, { status: result.verdict === "ship" ? "shortlisted" : "rejected", note: `audit average ${result.average}` })) {
+          marked = result.verdict === "ship" ? "shortlisted" : "rejected";
+        }
+      }
+      return ok({ ...result, ...(marked ? { draft: marked } : {}) });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "media_cleanup",
+  {
+    title: "Clean up old drafts",
+    description:
+      "Removes old drafts from <project>/.ai-media to stop it growing: rejected drafts after a few days, drafts already used for a final file after a couple of weeks, and untouched drafts after a month. " +
+      "Only files inside .ai-media are ever considered, final assets in the project are never touched, and a used draft goes only if its final file still exists. " +
+      "dry_run is true by default: it lists what would be removed and how much space it frees. Pass dry_run: false to delete. The server also does this on its own once per session unless auto_cleanup is off.",
+    inputSchema: {
+      dry_run: z.boolean().default(true),
+      rejected_days: z.number().int().min(0).max(365).optional().describe(`Default ${DEFAULT_DAYS.rejected}`),
+      used_days: z.number().int().min(0).max(365).optional().describe(`Default ${DEFAULT_DAYS.used}`),
+      draft_days: z.number().int().min(1).max(365).optional().describe(`Default ${DEFAULT_DAYS.draft}`),
+    },
+  },
+  async (a) => {
+    try {
+      const root = realpathSync(cfg.outputRoots[0]);
+      const r = cleanup(root, { dryRun: a.dry_run, days: { rejected: a.rejected_days, used: a.used_days, draft: a.draft_days } as Partial<typeof DEFAULT_DAYS> });
+      return ok({ dryRun: r.dryRun, wouldFreeMB: Math.round(r.freedBytes / 10_485.76) / 100, removed: r.removed, keptFiles: r.kept });
+    } catch (e) {
+      return fail(e);
+    }
+  },
 );
 
 server.registerTool(
@@ -853,6 +915,7 @@ server.registerTool(
           ? await optimizeVideo(input, out, { maxWidth: a.max_width, keepAudio: a.keep_audio, strip })
           : await optimizeImage(input, out, a.max_width, undefined, strip);
         const notice = firstTimeNotice();
+        markDraft(root, input, { status: "used", final: relative(root, r.output).split("\\").join("/") });
         return ok({ ...r, output: relative(root, r.output), ...(notice ? { notice } : {}) });
       } finally {
         p.done();

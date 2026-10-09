@@ -128,6 +128,34 @@ Both of these came out of the prompts above, through Google Flow on an AI Pro pl
 <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/poster.webp" width="42%" alt="Make images and videos with the AI plan you already pay for. No API keys, no second bill. Works in Claude Code, Cursor, Codex and any MCP client">
 </p>
 
+## It learns from its own mistakes
+
+Every time the model scores an image with `design_audit` (and tells it the asset type), the server writes the scores to a small local journal in your no-api-media folder. It is never uploaded and never lives inside a project. The next `design_brief` for that kind of asset reads it back: any criterion that has fallen short at least twice (for example "not template" or "brand presence") is turned into advice and put into every prompt up front. A mistake that happened twice stops happening a third time.
+
+On top of that, `design_brief` carries a short list of built-in lessons from real use, such as these:
+
+- Never ask the model to draw a real logo or to spell words. Leave a calm area, then place the real logo file and the text afterwards.
+- If the image will be cropped much wider than 16:9, keep every important element in the middle band. Set `context.targetAspect` (for example `3.2:1` for a profile banner) and the brief adds this guidance for you.
+- A single big centred object reads as stock. Ask for an abstract backdrop with open space and let the real brand mark be the focal point.
+- A black-background logo dropped on busy art washes out. Put it on a dark glass plate or a feathered mask.
+
+The full list, with the reasons and the provider notes, is in [docs/lessons.md](docs/lessons.md).
+
+## It keeps your project tidy
+
+Generated drafts land in `<project>/.ai-media`. Left alone, that folder fills up with rejected attempts. The server now tracks what happened to each draft:
+
+| Status | How it gets there | When it is removed |
+|---|---|---|
+| draft | just generated | after 30 days |
+| shortlisted | `design_audit` said ship | after 60 days |
+| rejected | `design_audit` said revise | after 3 days |
+| used | `media_optimize` made a final file from it | after 14 days, and only if that final file still exists |
+
+Pass the draft's `file` to `design_audit` and `media_optimize` does the rest on its own. The final image goes to your project's own images folder, so nothing important stays in `.ai-media`.
+
+Cleanup runs once per session, and you can run it yourself with `media_cleanup` (a dry run by default, so it first shows what would go and how much space it frees). It is strict on purpose: it only looks inside `.ai-media`, never touches your final files, skips symbolic links, and ignores anything that is not a media file. Turn the automatic part off with `no-api-media-mcp config set auto_cleanup false` or `NOAPI_AUTO_CLEANUP=0`.
+
 ## Connect your accounts
 
 You sign in yourself, once. The server never asks for or sees a password.
@@ -216,7 +244,7 @@ codex mcp add no-api-media -- node /full/path/to/no-api-media-mcp/dist/src/index
 | `providers_list` | Every provider and JSON site, and what each can make |
 | `project_profile` | Reads the project: style tier, 3D/animated, colours, fonts, reference images |
 | `design_brief` | Writes a real creative brief (project, purpose, placement, premium quality bar) with concept directions and a critique checklist. Asset types: logo, app icon, hero, illustration, product shot, social post, banner, infographic, poster, background video, product video |
-| `design_audit` | The art-director check after you look at an image: score eight criteria (focal point, thumbnail, hierarchy, palette, topic cues, brand presence, text accuracy, not template) and get ship or revise with the exact fix for each weak point |
+| `design_audit` | The art-director check after you look at an image (pass `asset_type` so it learns, and `file` so a rejected draft can be cleaned up): score eight criteria (focal point, thumbnail, hierarchy, palette, topic cues, brand presence, text accuracy, not template) and get ship or revise with the exact fix for each weak point |
 | `image_generate` | Makes images with `codex`, `chatgpt`, `flow`, `gemini`, `higgsfield`, `grok` or your own site |
 | `video_quote` | Exact credit cost for a Flow or Higgsfield job, generates nothing |
 | `video_generate` | Veo 3.1 / Omni in Flow, Seedance / Kling in Higgsfield, or Grok, with a credit cap |
@@ -326,6 +354,12 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Does it learn from my past results?
+Yes, locally. `design_audit` writes each score sheet to a small journal on your machine, and `design_brief` turns the criteria that keep falling short into advice at the top of the next prompt for that asset type. It also carries built-in lessons from real use. Nothing is uploaded.
+
+### Will it fill my disk with old drafts?
+No. Rejected drafts are removed after 3 days, drafts that already became a final file after 14 days, and untouched ones after 30. It only ever looks inside `.ai-media`, never touches your final files, and you can switch it off or run it by hand with `media_cleanup`.
 
 ### Is it free?
 The server is free and open source under Apache-2.0. It uses the AI plans you already have, so it adds no API bill.

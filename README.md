@@ -3,7 +3,7 @@
 <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/banner.webp" width="640" alt="no-api-media-mcp logo">
 
 [![ci](https://github.com/farhan6667/no-api-media-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/farhan6667/no-api-media-mcp/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Node 22+](https://img.shields.io/badge/node-22%2B-339933?logo=node.js&logoColor=white)
 <br>
 ![MCP compatible](https://img.shields.io/badge/MCP-compatible-6E56CF)
@@ -316,7 +316,7 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE). See [NOTICE](NOTICE) for the attribution and trademark note.
 
 ---
 

@@ -19,7 +19,7 @@
     "email": "nexaforge.services@gmail.com",
     "url": "https://nexaforge.eu.cc/"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "playwright-core": "^1.63.0",
@@ -42,6 +42,7 @@
     "README.md",
     "SECURITY.md",
     "LICENSE",
+    "NOTICE",
     "CHANGELOG.md"
   ],
   "keywords": [

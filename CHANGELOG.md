@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Licence changed from MIT to Apache-2.0 for future versions (adds an explicit patent grant and a NOTICE file). Versions already published stay under MIT.
+
 ## 0.3.0 (2026-10-06)
 
 **Behaviour change.** `media_optimize` now strips embedded metadata from the files it writes, by default, and says so.

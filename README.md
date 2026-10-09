@@ -334,7 +334,7 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 </a>
 
 **Built by [Syed Farhan Ahmed](https://github.com/farhan6667) (SFA)** at **[NexaForge](https://nexaforge.eu.cc/)**<br>
-Web development · Cyber security · IT infrastructure
+Cyber security · Vibe coding · Web development and IT infrastructure
 
 <a href="https://nexaforge.eu.cc/">Website</a> ·
 <a href="https://www.linkedin.com/in/sfa6667">LinkedIn</a> ·

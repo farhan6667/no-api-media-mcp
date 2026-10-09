@@ -14,7 +14,11 @@
     "prepare": "npm run build",
     "setup": "node dist/src/index.js setup"
   },
-  "author": "Syed Farhan Ahmed (https://nexaforge.eu.cc/)",
+  "author": {
+    "name": "Syed Farhan Ahmed",
+    "email": "nexaforge.services@gmail.com",
+    "url": "https://nexaforge.eu.cc/"
+  },
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

@@ -307,6 +307,13 @@ Put a file in `~/.no-api-media/providers/<id>.json`. Start from [`examples/provi
 
 Fixes for broken selectors and new site specs are the most useful help. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Contact and support
+
+- **Bugs, questions, ideas:** open a [GitHub issue](https://github.com/farhan6667/no-api-media-mcp/issues).
+- **Security problems:** use a private security advisory, see [SECURITY.md](SECURITY.md).
+- **Work with NexaForge** (websites, cyber security, IT infrastructure): [nexaforge.services@gmail.com](mailto:nexaforge.services@gmail.com) or [nexaforge.eu.cc/contact](https://nexaforge.eu.cc/contact).
+- If this saved you an API bill, a star on the repo is the easiest way to say thanks.
+
 ## License
 
 [MIT](LICENSE)
@@ -315,6 +322,23 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 
 <div align="center">
 
-Built by <a href="https://github.com/farhan6667">Syed Farhan Ahmed</a> · <a href="https://nexaforge.eu.cc/">nexaforge.eu.cc</a> · <a href="https://www.linkedin.com/in/sfa6667">LinkedIn</a> · <a href="https://farhan6667.github.io/portfolio/">Portfolio</a>
+<a href="https://nexaforge.eu.cc/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/brand/nexaforge-lockup-dark.webp">
+    <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/brand/nexaforge-lockup-light.webp" height="48" alt="NexaForge">
+  </picture>
+</a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://github.com/farhan6667">
+  <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/brand/sfa-logo.webp" height="72" alt="SFA, Syed Farhan Ahmed">
+</a>
+
+**Built by [Syed Farhan Ahmed](https://github.com/farhan6667) (SFA)** at **[NexaForge](https://nexaforge.eu.cc/)**<br>
+Web development · Cyber security · IT infrastructure
+
+<a href="https://nexaforge.eu.cc/">Website</a> ·
+<a href="https://www.linkedin.com/in/sfa6667">LinkedIn</a> ·
+<a href="https://farhan6667.github.io/portfolio/">Portfolio</a> ·
+<a href="mailto:nexaforge.services@gmail.com">Email</a>
 
 </div>

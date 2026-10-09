@@ -40,3 +40,5 @@ This server holds a logged-in browser session for accounts people pay for. That 
 ## Reporting
 
 Please open a private security advisory on GitHub rather than a public issue.
+
+If you can't use GitHub advisories, email nexaforge.services@gmail.com with the subject "no-api-media-mcp security". Say what you found and how to reproduce it, but don't send cookies, tokens or anyone's account data.

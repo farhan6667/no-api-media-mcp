@@ -341,6 +341,7 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 - **Security problems:** use a private security advisory, see [SECURITY.md](SECURITY.md).
 - **Work with NexaForge** (cyber security, vibe coding, web development and IT infrastructure): [nexaforge.services@gmail.com](mailto:nexaforge.services@gmail.com) or [nexaforge.eu.cc/contact](https://nexaforge.eu.cc/contact).
 - If this saved you an API bill, a star on the repo is the easiest way to say thanks.
+- **Sponsor the work.** If your company can help with hosting, tools or funding, the [sponsor page](https://github.com/farhan6667/farhan6667/blob/main/SPONSOR.md) explains how. GitHub Sponsors is not available in Pakistan, so it works by email.
 
 ## License
 

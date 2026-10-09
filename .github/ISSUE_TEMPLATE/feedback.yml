@@ -1,0 +1,63 @@
+name: Feedback, it worked or it did not
+description: Tell us how it went on your setup. Good news is useful too.
+title: "Feedback: "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying it. A short note is enough, and "it worked" is a useful report.
+        **Please do not paste** passwords, cookies, tokens, signed media links, or screenshots that show your account or private chats.
+  - type: dropdown
+    id: result
+    attributes:
+      label: How did it go?
+      options:
+        - It worked as expected
+        - It worked, with some trouble
+        - It partly worked
+        - It did not work
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Which AI client do you use?
+      placeholder: Claude Code, Cursor, Codex, Windsurf ...
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which provider did you use?
+      multiple: true
+      options:
+        - ChatGPT through Codex
+        - Google Flow
+        - Gemini
+        - Higgsfield
+        - Grok
+        - Another site (JSON spec)
+        - Local tools only (background removal, video editing, social sizes)
+  - type: input
+    id: setup
+    attributes:
+      label: Version and system
+      description: Run `no-api-media-mcp --version`. Add your operating system and Node version.
+      placeholder: "0.4.0, Windows 11, Node 22"
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you try, and what happened?
+      description: Say what you asked your AI client to do and what you got back. Error messages help, with anything private removed.
+    validations:
+      required: true
+  - type: textarea
+    id: confusing
+    attributes:
+      label: Was anything confusing or missing?
+      description: Docs, setup, sign in, the tools, anything. One honest sentence is fine.
+  - type: textarea
+    id: wish
+    attributes:
+      label: What would make it better for you?

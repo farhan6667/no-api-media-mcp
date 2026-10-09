@@ -336,7 +336,8 @@ Fixes for broken selectors and new site specs are the most useful help. See [CON
 
 ## Contact and support
 
-- **Bugs, questions, ideas:** open a [GitHub issue](https://github.com/farhan6667/no-api-media-mcp/issues).
+- **Tried it? Tell me how it went**, good or bad, with the [feedback form](https://github.com/farhan6667/no-api-media-mcp/issues/new?template=feedback.yml). It takes two minutes.
+- **Bugs, questions, ideas:** open a [GitHub issue](https://github.com/farhan6667/no-api-media-mcp/issues) or start a [discussion](https://github.com/farhan6667/no-api-media-mcp/discussions).
 - **Security problems:** use a private security advisory, see [SECURITY.md](SECURITY.md).
 - **Work with NexaForge** (cyber security, vibe coding, web development and IT infrastructure): [nexaforge.services@gmail.com](mailto:nexaforge.services@gmail.com) or [nexaforge.eu.cc/contact](https://nexaforge.eu.cc/contact).
 - If this saved you an API bill, a star on the repo is the easiest way to say thanks.

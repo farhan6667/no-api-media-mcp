@@ -15,7 +15,7 @@ import { genericGenerate, genericStatus, loadSpecs } from "./providers/generic.j
 import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, higgsfieldStatus } from "./providers/higgsfield.js";
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
-import { ASSET_TYPES, designBrief, LOOKS, type Look } from "./design.js";
+import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look } from "./design.js";
 import { projectProfile, TIERS } from "./project.js";
 import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
 
@@ -98,7 +98,9 @@ When the user asks for any image or video for their project, do this without ask
 2. Decide the slots yourself: where the asset goes (hero, OG image, feature icons, background video...), size, file path in the project's asset folder.
 3. Call design_brief like a creative director briefing a designer: asset type, subject, brand colours, style tier, and a full "context" (project name, what it does from project_profile.about, who sees it, where it goes, what it must achieve, and exactText for any words). Quality defaults to premium. If the user named a level ("premium", "glowing", "minimal", "luxury 3D"), that wins.
 4. Generate the brief's directions with image_generate. Designs with words (infographic, poster, logo with wordmark) go to "codex" first (GPT Image renders text best), then "flow". Photo and 3D scenes go to "flow" (Nano Banana 2, 0 credits on AI Pro). Save drafts into .ai-media (no output_path).
-5. Look at every result yourself and score it against the brief's critique list. Rewrite the prompt for the exact failures and retry, at most 3 rounds.
+5. Look at every result yourself and score it against the brief's critique list, then run the eye-catch audit: score each criterion 0 to 5 and call design_audit. Rewrite the prompt for the exact failures it names and retry, at most 3 rounds. Ship only on "ship".
+   Words and numbers that must be exact (a terminal command, a results table, a diagram with labels) are better drawn locally as SVG or HTML and rendered than asked from an image model. Use the image model for the art around them.
+   Never generate the user's own logo or a third party's logo. Place the real logo file from the project after generation. A named third-party product (for example a security platform) is shown through colour and motif only, with an "independent project" note on public assets.
 6. Show the user a shortlist with one line of reasoning each before placing anything, unless they told you to just do it.
 7. media_optimize the winner into the real asset folder, wire it into the code with width, height and real alt text, then check the page.
    media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
@@ -305,6 +307,21 @@ server.registerTool(
     },
   },
   async (a) => ok(designBrief(a.asset_type, a.subject, a.brand, a.style, a.context)),
+);
+
+server.registerTool(
+  "design_audit",
+  {
+    title: "Eye-catch audit of a finished image",
+    description:
+      "After you have LOOKED at a generated image, score it 0 to 5 on each criterion (focal-point, thumbnail, hierarchy, palette, topic-cues, brand-presence, text-accuracy, not-template) " +
+      "and pass the scores here. Returns ship or revise, the weakest points and the exact fix for each. Call with no scores to get the criteria. " +
+      "Be harsh: a generic, flat or template-looking result scores 2 or 3.",
+    inputSchema: {
+      scores: z.record(z.string().max(30), z.number().min(0).max(5)).default({}),
+    },
+  },
+  async (a) => ok(Object.keys(a.scores).length ? auditScores(a.scores) : { criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })), pass: "average 4 or more, nothing below 3" }),
 );
 
 server.registerTool(

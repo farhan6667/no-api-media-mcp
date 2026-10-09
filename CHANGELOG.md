@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-10-09)
+
+- New tool `design_audit`: an eight-point eye-catch audit (focal point, thumbnail test, hierarchy, palette, topic cues, brand presence, text accuracy, not template). Ship needs an average of 4 and nothing below 3; missing scores never count as a pass.
+- `design_brief` now returns the audit criteria, field-specific visual cues (for example a shield, hex grid and terminal for cyber security) and a third-party rule: never draw another company's logo, show the topic through colour and motif and add an independent-project note.
+- Server instructions: exact words, commands and numbers are drawn locally as SVG or HTML instead of asked from an image model; real brand logos are placed from the project's files after generation.
+
 ## Unreleased
 
 - Licence changed from MIT to Apache-2.0 for future versions (adds an explicit patent grant and a NOTICE file). Versions already published stay under MIT.

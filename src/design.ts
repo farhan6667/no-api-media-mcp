@@ -257,6 +257,71 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
   },
 };
 
+
+/**
+ * The "would an art director stop scrolling for this?" test. Applied to every asset, on top of the
+ * asset-specific critique. Each criterion is scored 0 to 5 by the client's own model after looking at the image.
+ */
+export const AUDIT_RUBRIC = [
+  { id: "focal-point", ask: "Does one thing win the first second, and can you say what it is without hesitating?", fix: "Remove or dim competing elements, enlarge the hero element, add contrast only around the focal point." },
+  { id: "thumbnail", ask: "Shrink it to 300 px wide (a feed or a link preview). Is the message still clear?", fix: "Bigger type and shapes, fewer small details, thicker strokes." },
+  { id: "hierarchy", ask: "Are there exactly three levels (title, support, detail) and does the eye travel in that order?", fix: "Set size ratios of about 3:1.5:1 and align the reading path left to right, top to bottom." },
+  { id: "palette", ask: "At most three hues plus neutrals, with one accent used sparingly?", fix: "Pull colours from the brand or the topic and drop any extra hue." },
+  { id: "topic-cues", ask: "Without reading a word, could a stranger tell the field (security, finance, travel, kids)?", fix: "Add one or two honest visual cues of the field, drawn as simple shapes, never a third party's logo." },
+  { id: "brand-presence", ask: "Is the brand there (logo, colour, lockup) without shouting?", fix: "Place the real logo file in a consistent corner or strip after generation. Never generate a company's logo." },
+  { id: "text-accuracy", ask: "Is every word spelled right, readable, and short enough?", fix: "Cut words. For exact numbers, commands or code, draw the text locally (SVG or HTML) instead of asking an image model." },
+  { id: "not-template", ask: "Does it look made for this project, not like a generic slide or stock panel?", fix: "Use a real detail from the project (a real command, number or screen), and one unusual composition choice." },
+] as const;
+
+export const AUDIT_PASS = { average: 4, minimum: 3 };
+
+export interface AuditResult {
+  average: number;
+  weakest: string[];
+  verdict: "ship" | "revise";
+  fixes: { id: string; score: number; fix: string }[];
+  missing: string[];
+}
+
+/** Scores are 0 to 5 per criterion id. A missing criterion is a gap to fill, never a pass. */
+export function auditScores(scores: Record<string, number>): AuditResult {
+  const known = AUDIT_RUBRIC.map((r) => r.id as string);
+  const missing = known.filter((id) => typeof scores[id] !== "number" || !Number.isFinite(scores[id]));
+  const clamp = (n: number) => Math.min(5, Math.max(0, n));
+  const given = known.filter((id) => !missing.includes(id)).map((id) => ({ id, score: clamp(scores[id]) }));
+  const average = given.length ? Math.round((given.reduce((a, b) => a + b.score, 0) / known.length) * 100) / 100 : 0;
+  const low = given.filter((g) => g.score < AUDIT_PASS.average).sort((a, b) => a.score - b.score);
+  const fixes = low.map((g) => ({ ...g, fix: AUDIT_RUBRIC.find((r) => r.id === g.id)!.fix }));
+  const weakest = low.slice(0, 3).map((g) => g.id);
+  const hardFail = given.some((g) => g.score < AUDIT_PASS.minimum);
+  const ship = !missing.length && average >= AUDIT_PASS.average && !hardFail;
+  return { average, weakest, verdict: ship ? "ship" : "revise", fixes, missing };
+}
+
+/** Honest visual cues per field, so the industry is obvious without words. Simple shapes only, never someone's logo. */
+const DOMAIN_CUES: { match: RegExp; field: string; cues: string }[] = [
+  { match: /\b(cyber\s?security|infosec|siem|soc|wazuh|forensic|dfir|detection|threat|pentest|vulnerab|malware|incident response)\b/i, field: "cyber security", cues: "a shield or lock motif drawn as a simple shape, a faint hex or circuit grid, a pulse or alert line, a terminal window with a real command, cool blue and cyan on a dark background with one warm alert accent" },
+  { match: /\b(devops|ci\/cd|kubernetes|docker|infrastructure|server|cloud|sysadmin)\b/i, field: "infrastructure", cues: "stacked server or node shapes, connected lines, a status dot row, a terminal or dashboard fragment" },
+  { match: /\b(mcp|agent|llm|claude|cursor|codex|vibe cod|ai coding)\b/i, field: "AI coding", cues: "a code editor or terminal fragment, a glowing connection between a prompt and its result, a small chat or cursor shape" },
+  { match: /\b(finance|bank|invoice|accounting|payment)\b/i, field: "finance", cues: "clean charts, a ledger or card shape, calm green or navy, steady lines" },
+  { match: /\b(travel|hotel|tour|umrah|hajj|flight)\b/i, field: "travel", cues: "a destination skyline or landscape, a route line, warm natural light" },
+];
+
+export function domainCues(...texts: (string | undefined)[]): { field: string; cues: string } | undefined {
+  const text = texts.filter(Boolean).join(" ");
+  const hit = DOMAIN_CUES.find((d) => d.match.test(text));
+  return hit ? { field: hit.field, cues: hit.cues } : undefined;
+}
+
+/** Names that belong to somebody else. Their marks are trademarks, so we express the topic through colour and motif only. */
+const THIRD_PARTY = /\b(wazuh|elastic|splunk|microsoft|google|openai|chatgpt|anthropic|claude|github|docker|kubernetes|aws|azure|nvidia|apple)\b/i;
+export function thirdPartyRule(...texts: (string | undefined)[]): string | undefined {
+  const m = texts.filter(Boolean).join(" ").match(THIRD_PARTY);
+  return m
+    ? `The brief mentions ${m[1]}. Do not draw its logo or wordmark and do not imitate its mark: refer to it in text only, express the topic through colour family and simple motifs, and add a small "independent project, not affiliated" note where the asset will be public.`
+    : undefined;
+}
+
 /** Assets where words are part of the design. Everywhere else the model is told to leave text out. */
 const TEXT_ASSETS = new Set<AssetType>(["infographic", "poster", "social-post", "banner"]);
 
@@ -333,6 +398,10 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   if (ctx.goal) lines.push(`The goal: ${ctx.goal.replace(/\.$/, "")}.`);
   lines.push(QUALITY[style.tier ?? "premium"]);
   lines.push(`What I have in mind: ${soften(visual)}`);
+  const cue = domainCues(name, ctx.about, ctx.audience, ctx.goal);
+  if (cue && asset !== "logo") lines.push(`Make the field obvious without words (${cue.field}): ${cue.cues}.`);
+  const tp = thirdPartyRule(name, ctx.about, ctx.goal);
+  if (tp) lines.push(tp);
   if (style.look) lines.push(`Overall visual style: ${LOOKS[style.look]}.`);
   if (brand.colors?.length) lines.push(`Use the brand colours ${brand.colors.join(", ")} as the main palette.`);
   if (TEXT_ASSETS.has(asset) || (asset === "logo" && ctx.exactText?.length)) {
@@ -446,6 +515,12 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     principles: p.principles,
     directions: p.directions.map((d) => ({ name: d.name, idea: d.idea, prompt: narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx) })),
     critique: [...p.critique, ...extraCritique],
+    eye_catch_audit: {
+      how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",
+      criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })),
+    },
+    domain_cues: domainCues(subject, ctx.project, ctx.about, ctx.goal),
+    third_party: thirdPartyRule(subject, ctx.project, ctx.about, ctx.goal),
     recommended: { provider: p.provider, aspect: p.aspect },
     process: [
       "Generate every direction (several variants each when the provider allows).",

@@ -216,6 +216,7 @@ codex mcp add no-api-media -- node /full/path/to/no-api-media-mcp/dist/src/index
 | `providers_list` | Every provider and JSON site, and what each can make |
 | `project_profile` | Reads the project: style tier, 3D/animated, colours, fonts, reference images |
 | `design_brief` | Writes a real creative brief (project, purpose, placement, premium quality bar) with concept directions and a critique checklist. Asset types: logo, app icon, hero, illustration, product shot, social post, banner, infographic, poster, background video, product video |
+| `design_audit` | The art-director check after you look at an image: score eight criteria (focal point, thumbnail, hierarchy, palette, topic cues, brand presence, text accuracy, not template) and get ship or revise with the exact fix for each weak point |
 | `image_generate` | Makes images with `codex`, `chatgpt`, `flow`, `gemini`, `higgsfield`, `grok` or your own site |
 | `video_quote` | Exact credit cost for a Flow or Higgsfield job, generates nothing |
 | `video_generate` | Veo 3.1 / Omni in Flow, Seedance / Kling in Higgsfield, or Grok, with a credit cap |

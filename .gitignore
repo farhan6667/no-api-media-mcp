@@ -8,3 +8,7 @@ chrome-profile/
 .env.*
 .no-api-media/
 scripts/_*.tmp.mjs
+
+# release artifacts (attached to GitHub releases, not tracked)
+*.tgz
+SHA256SUMS.txt

@@ -432,6 +432,41 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   return lines.join(" ");
 }
 
+
+/**
+ * Curated palettes and heading/body font pairings, keyed by the same field names domainCues() returns.
+ * Sourced from the ui-ux-pro-max design skill's reviewed colour and typography database (real, tested
+ * combinations, not invented), picked for a dark, premium, technical look. Used only when the caller hasn't
+ * supplied brand.colors, so a bare design_brief call still looks considered instead of generic.
+ */
+const PALETTES: Record<string, string[]> = {
+  "cyber security": ["#00D1FF", "#3B82FF", "#A45CFF", "#FF8A00"],
+  infrastructure: ["#1E293B", "#334155", "#22C55E", "#94A3B8"],
+  "AI coding": ["#00D1FF", "#8B5CF6", "#F59E0B", "#E2E8F0"],
+  finance: ["#0F172A", "#F59E0B", "#8B5CF6", "#F8FAFC"],
+  travel: ["#0EA5E9", "#F59E0B", "#0F172A", "#F8FAFC"],
+};
+
+const FONT_PAIRINGS: Record<string, { heading: string; body: string; googleFontsUrl: string }> = {
+  "cyber security": {
+    heading: "Space Grotesk", body: "DM Sans",
+    googleFontsUrl: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap",
+  },
+  infrastructure: {
+    heading: "Space Grotesk", body: "DM Sans",
+    googleFontsUrl: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap",
+  },
+  "AI coding": {
+    heading: "Outfit", body: "Rubik",
+    googleFontsUrl: "https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Rubik:wght@400;500&display=swap",
+  },
+};
+const DEFAULT_FONT_PAIRING = FONT_PAIRINGS["cyber security"];
+
+/** A premium dark palette with a bold accent, sourced from the "Cybersecurity Platform" entry in the design
+ * skill's database. A distinct alternative to neon-glass: flatter, higher contrast, more "terminal". */
+const CYBER_MATRIX = "cyber-matrix look: near-black background, a single saturated signal-green accent for the one thing that matters, a muted red only for danger or alerts, thin hairline borders, no soft glow, flat and high-contrast like a hardened terminal, confident and a little cold";
+
 /**
  * Named looks, so a user can say "neon glass" and get the same family of results every time.
  * neon-glass is modelled on the project's own launch graphics.
@@ -447,6 +482,7 @@ export const LOOKS = {
     "soft clay 3D look: rounded matte 3D shapes, pastel colours, soft global illumination, gentle shadows, friendly and polished",
   "editorial-photo":
     "editorial photo look: natural light, real textures, considered framing, shallow depth of field, magazine quality",
+  "cyber-matrix": CYBER_MATRIX,
 } as const;
 export type Look = keyof typeof LOOKS;
 
@@ -540,6 +576,9 @@ export interface BriefExtra {
 
 export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}, extra: BriefExtra = {}) {
   const p = PLAYBOOKS[asset];
+  const cueField = domainCues(subject, ctx.project, ctx.about, ctx.goal)?.field;
+  if (!brand.colors?.length && cueField && PALETTES[cueField]) brand = { ...brand, colors: PALETTES[cueField] };
+  const typography = (cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING;
   // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
   const s: Style = { ...style, tier: style.tier ?? "premium" };
   const extraCritique = [TIER_STYLE[s.tier!].critique];
@@ -557,6 +596,7 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
       ]),
     })),
     learned: extra.learnedItems ?? [],
+    typography: asset === "logo" ? undefined : { ...typography, note: "Use this pairing for any real wordmark or text you composite afterwards, loaded from its Google Fonts URL, instead of a generic system font." },
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

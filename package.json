@@ -1,6 +1,6 @@
 {
   "name": "no-api-media-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Generate images and videos for your projects with the ChatGPT, Google AI Pro, Higgsfield and Grok subscriptions you already pay for. No API keys.",
   "main": "dist/src/index.js",
   "directories": {

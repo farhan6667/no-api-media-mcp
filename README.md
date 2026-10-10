@@ -128,6 +128,21 @@ Both of these came out of the prompts above, through Google Flow on an AI Pro pl
 <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/poster.webp" width="42%" alt="Make images and videos with the AI plan you already pay for. No API keys, no second bill. Works in Claude Code, Cursor, Codex and any MCP client">
 </p>
 
+## It checks for a new version
+
+Once a day, the server checks this project's GitHub releases. If a newer one is out, it tells you at startup
+and in `status`/`setup`: what changed, and the exact command to update. It never patches itself while running,
+and it never installs anything unless you turn that on:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `NOAPI_CHECK_UPDATES=0` | checks on | stop checking entirely |
+| `NOAPI_AUTO_UPDATE=1` | off | once a newer version is found, run `npm install -g no-api-media-mcp@latest` for you; it takes effect the next time the server starts, never mid-run |
+| `NOAPI_UPDATE_CHECK_HOURS` | 24 | how often to check |
+
+The check is a plain, unauthenticated read of this repo's own GitHub releases, with a size cap and a short
+timeout, and a failed check never breaks a real tool call.
+
 ## It learns from its own mistakes
 
 Every time the model scores an image with `design_audit` (and tells it the asset type), the server writes the scores to a small local journal in your no-api-media folder. It is never uploaded and never lives inside a project. The next `design_brief` for that kind of asset reads it back: any criterion that has fallen short at least twice (for example "not template" or "brand presence") is turned into advice and put into every prompt up front. A mistake that happened twice stops happening a third time.
@@ -354,6 +369,12 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Will it update itself without telling me?
+No. It checks once a day and tells you when a newer version exists, with the exact command to run. It only installs it for you if you explicitly set `NOAPI_AUTO_UPDATE=1`, and even then only for the next run, never while the server is live.
+
+### Where do the palette and font suggestions in design_brief come from?
+From a reviewed UI design skill's colour and typography database, picked by the same topic detection the brief already does. They are only used when you don't supply your own brand colours, and you can always override them.
 
 ### Does it learn from my past results?
 Yes, locally. `design_audit` writes each score sheet to a small journal on your machine, and `design_brief` turns the criteria that keep falling short into advice at the top of the next prompt for that asset type. It also carries built-in lessons from real use. Nothing is uploaded.

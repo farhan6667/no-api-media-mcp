@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 (2026-10-10)
+
+- **Checks for a new version.** Once a day (configurable), the server checks this project's GitHub releases and
+  tells you in `status`/`setup`, and once at startup, when a newer version is out: what changed and the exact
+  command to update (`npm install -g no-api-media-mcp@latest`). It only ever notifies: it never patches the
+  running server, and it never installs anything on its own unless you set `NOAPI_AUTO_UPDATE=1`, in which case
+  it runs a real `npm install -g` (no shell, scrubbed environment) once a newer version is found, and the new
+  version is used from the next run. Disable the check entirely with `NOAPI_CHECK_UPDATES=0`. The network call
+  is a plain, unauthenticated read of this repo's own GitHub releases, with a byte cap and a short timeout, and
+  it never breaks a real tool call if it fails.
+- **Curated palettes and a real font pairing.** `design_brief` now fills in a brand palette (when you didn't
+  supply one) and suggests a heading/body Google Fonts pairing for whatever wordmark or text you composite
+  afterwards, picked by the same field detection `design_brief` already does (cyber security, infrastructure,
+  AI coding). Both are sourced from a reviewed UI design skill's colour and typography database, not invented.
+  A system font was a quiet reason banners looked plain; a real display font like Space Grotesk is most of
+  the difference between a plain banner and a premium one.
+- New named look `cyber-matrix`: a flatter, higher-contrast alternative to neon-glass (near-black, one
+  signal-green accent, muted red only for danger), also sourced from that same database.
+- Tests: 146 pass.
+
+
 ## 0.5.0 (2026-10-10)
 
 - **Learns from its own mistakes.** `design_audit` (with `asset_type`) writes each score sheet to a small local journal. `design_brief` reads it back, and any criterion that fell short at least twice for that asset type becomes advice at the end of every prompt. Nothing is uploaded.

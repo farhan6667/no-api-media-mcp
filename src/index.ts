@@ -17,6 +17,7 @@ import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type Flo
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
 import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look } from "./design.js";
 import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
+import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
 import { learnedFor, learnedSentence, readJournal, record } from "./learning.js";
 import { lessonsFor } from "./lessons.js";
 import { projectProfile, TIERS } from "./project.js";
@@ -28,8 +29,21 @@ trustSystemCertificates();
 const cfg = loadConfig();
 const browser = new Browser(cfg);
 
+/** `status`/`setup` always show this synchronously so it's reliable even inside the rate-limit window; nothing here can throw past this function. */
+async function printUpdateNoticeOnce() {
+  try {
+    const st = readState(cfg);
+    const r = await checkForUpdate({ lastCheckedAt: st.updateLastCheckedAt, lastSeenVersion: st.updateLastSeenVersion }, { currentVersion: VERSION, intervalHours: cfg.checkUpdates ? cfg.updateCheckIntervalHours : Number.POSITIVE_INFINITY });
+    if (cfg.checkUpdates) writeState(cfg, { ...(r.state.lastCheckedAt ? { updateLastCheckedAt: r.state.lastCheckedAt } : {}), ...(r.state.lastSeenVersion ? { updateLastSeenVersion: r.state.lastSeenVersion } : {}) });
+    if (r.release) process.stdout.write(`${updateNotice(r.release, VERSION)}\n\n`);
+  } catch {
+    /* status must still print even if the check fails */
+  }
+}
+
 if (process.argv[2] === "setup" || process.argv[2] === "status") {
   // `status` is setup without opening the sign-in window.
+  await printUpdateNoticeOnce();
   const args = process.argv.slice(3);
   await runSetup(cfg, browser, VERSION, process.argv[2] === "status" ? [...args, "--no-login"] : args);
   process.exit(0);
@@ -87,6 +101,26 @@ function firstTimeNotice(): string | undefined {
 }
 if (!readState(cfg).stripNoticeShown) log("NOTICE:", STRIP_NOTICE);
 
+/** Runs once at startup, never blocks it. Logs a notice to stderr only; never touches a tool result. */
+function backgroundUpdateCheck() {
+  if (!cfg.checkUpdates) return;
+  const state = readState(cfg);
+  checkForUpdate({ lastCheckedAt: state.updateLastCheckedAt, lastSeenVersion: state.updateLastSeenVersion }, { currentVersion: VERSION, intervalHours: cfg.updateCheckIntervalHours })
+    .then(async (r) => {
+      writeState(cfg, { ...(r.state.lastCheckedAt ? { updateLastCheckedAt: r.state.lastCheckedAt } : {}), ...(r.state.lastSeenVersion ? { updateLastSeenVersion: r.state.lastSeenVersion } : {}) });
+      if (!r.release) return;
+      log("NOTICE:", updateNotice(r.release, VERSION));
+      if (cfg.autoUpdate) {
+        const res = await autoInstall(r.release.version);
+        log(res.ok ? `Updated to v${r.release.version}. It will be used the next time this server starts.` : `Auto-update failed: ${res.detail}`);
+      }
+    })
+    .catch(() => {
+      /* never breaks the server */
+    });
+}
+backgroundUpdateCheck();
+
 const gate = new JobGate(cfg.minGapSeconds * 1000);
 // Local edits (ffmpeg, rembg) touch no website, so they skip the human-pace gap but still run one at a time.
 const localGate = new JobGate(0);
@@ -108,6 +142,7 @@ When the user asks for any image or video for their project, do this without ask
    Pass asset_type and the draft's file to design_audit, so the server learns what keeps going wrong and a rejected draft can be cleaned up later. design_brief already carries "learned" advice from earlier audits and built-in lessons: follow them on the first try.
    Always set context.targetAspect to the shape the image will finally be cropped to (a profile banner is about 3.2:1).
    Compose real logos and text over generated art yourself: a black-background logo goes on a dark glass plate or a feathered mask, never plain screen blending.
+   design_brief also suggests a brand palette and a heading/body Google Fonts pairing when you didn't supply your own (curated, not invented). Load that font pairing's Google Fonts URL in the HTML you render for the wordmark and any composited text, instead of a generic system font: a real display font is most of what separates a premium banner from a plain one.
 7. media_optimize the winner into the real asset folder (the project's own images folder, never leave a final in .ai-media), wire it into the code with width, height and real alt text, then check the page. Drafts in .ai-media are cleaned up on their own: rejected ones after a few days, used ones after a couple of weeks (media_cleanup shows or does it on demand).
    media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;

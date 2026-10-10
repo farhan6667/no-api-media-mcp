@@ -41,6 +41,11 @@ export interface Config {
   stripAiMetadata: boolean;
   /** Remove old rejected or used drafts from <project>/.ai-media once per session. Default true. */
   autoCleanup: boolean;
+  /** Check GitHub for a newer release. Default true. Off via NOAPI_CHECK_UPDATES=0. */
+  checkUpdates: boolean;
+  /** Run `npm install -g` for a newer version once found. Default false: notify only. On via NOAPI_AUTO_UPDATE=1. */
+  autoUpdate: boolean;
+  updateCheckIntervalHours: number;
 }
 
 export function readConfigFile(home: string): Record<string, unknown> {
@@ -83,6 +88,12 @@ export function resolveAutoCleanup(saved: Record<string, unknown>, environment: 
   if (typeof v === "boolean") return v;
   if (typeof v === "string") return v.toLowerCase() !== "false";
   return true;
+}
+
+function flag(name: string, def: boolean): boolean {
+  const v = env(name);
+  if (v === undefined || v === "") return def;
+  return !(v === "0" || v.toLowerCase() === "false");
 }
 
 function findChrome(): string {
@@ -181,6 +192,9 @@ export function loadConfig(): Config {
     minGapSeconds: Number(env("MIN_GAP") ?? saved.minGapSeconds ?? 20),
     stripAiMetadata: resolveStrip(saved),
     autoCleanup: resolveAutoCleanup(saved),
+    checkUpdates: flag("CHECK_UPDATES", true),
+    autoUpdate: flag("AUTO_UPDATE", false),
+    updateCheckIntervalHours: Number(env("UPDATE_CHECK_HOURS") ?? 24) || 24,
   };
 }
 

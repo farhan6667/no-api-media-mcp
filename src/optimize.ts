@@ -54,12 +54,30 @@ export function ff(args: string[], timeoutMs = 10 * 60_000, cwd = tmpdir()): Pro
   });
 }
 
+/** Same as ff(), but for a pipe:1 raw-data output: returns the binary stdout instead of the stderr log. */
+export function ffToBuffer(args: string[], timeoutMs = 60_000, cwd = tmpdir()): Promise<Buffer> {
+  const safe = withFileOnlyInputs(args);
+  return new Promise((resolve, reject) => {
+    const p = spawn(ffmpegPath(), ["-hide_banner", "-nostdin", ...safe], { cwd, shell: false, windowsHide: true, env: scrubbedEnv() });
+    const chunks: Buffer[] = [];
+    let err = "";
+    p.stdout.on("data", (d) => chunks.push(d));
+    p.stderr.on("data", (d) => (err += d));
+    const t = setTimeout(() => p.kill(), timeoutMs);
+    p.on("error", () => reject(new Error("ffmpeg not found. Install it (winget install Gyan.FFmpeg / brew install ffmpeg) or set NOAPI_FFMPEG.")));
+    p.on("close", (code) => {
+      clearTimeout(t);
+      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`ffmpeg failed: ${err.slice(-800)}`));
+    });
+  });
+}
+
 /**
  * Structural similarity between the optimised file and the original at the same size. 1.0 = identical.
  * Both are flattened onto black first (premultiplied alpha), so colour hidden under fully transparent
  * pixels, which nobody can see and WebP rightly throws away, doesn't count as a difference.
  */
-async function ssim(original: string, optimized: string): Promise<number> {
+export async function ssim(original: string, optimized: string): Promise<number> {
   const flat = "format=yuva444p,premultiply=inplace=1,format=yuv444p";
   const out = await ff([
     "-i", optimized, "-i", original,

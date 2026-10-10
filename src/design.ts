@@ -7,7 +7,7 @@
  */
 import { matchPersona } from "./audience.js";
 
-export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "infographic", "poster", "background-video", "product-video"] as const;
+export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "infographic", "poster", "background-video", "product-video", "texture", "environment-map"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
 
 export interface Brand {
@@ -267,6 +267,42 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
     aspect: "3:4",
     finish: "Export 1080x1350 for LinkedIn/Instagram feed, 1200x627 for link previews.",
   },
+  texture: {
+    goal: "A seamless, tileable surface for a website background or a 3D material map. It is meant to repeat, never to be looked at once.",
+    principles: [
+      "Must tile edge to edge: the left edge continues into the right edge and the top edge into the bottom edge, with no visible seam or repeat line.",
+      "Even detail and contrast across the whole tile. No single corner or centre that reads as 'the subject' once it repeats.",
+      "No single large focal object, no strong directional shadow (it would break the tile at the edges).",
+      "Flat, even lighting throughout.",
+    ],
+    directions: [
+      { name: "Fine grain", idea: "Subtle noise or grain for a calm web background.", prompt: (s, b) => `Seamless tileable fine-grain texture evoking ${s}, ${palette(b, "subtle muted tones")}, even flat lighting, no shadow, no single focal point, repeats edge to edge with no visible seam.` },
+      { name: "Geometric repeat", idea: "A mathematically repeating motif.", prompt: (s, b) => `Seamless tileable geometric pattern evoking ${s}, ${palette(b, "two-tone palette")}, precise repeat unit, even contrast across the whole tile, no seam, no shadow.` },
+      { name: "Organic weave", idea: "A hand-feel organic material (fabric, paper, stone).", prompt: (s, b) => `Seamless tileable organic material texture evoking ${s}, ${mood(b, "natural, tactile")}, even flat lighting, no single focal point, repeats edge to edge with no visible seam.` },
+    ],
+    critique: ["Does it tile seamlessly left to right and top to bottom, with no visible seam?", "Is detail and contrast even across the whole tile, with no obvious centre?", "Calm enough to sit behind real content without fighting it?"],
+    provider: "flow or codex",
+    aspect: "1:1",
+    finish: "Before using it, tile four copies in a 2x2 grid (contact_sheet can lay them out) and look for a seam. media_optimize to WebP.",
+  },
+  "environment-map": {
+    goal: "A seamless 360-degree equirectangular panorama used as a Three.js or WebGL reflection and lighting map, not as a picture anyone looks at directly.",
+    principles: [
+      "Equirectangular projection: the full 360-degree horizontal view stretched flat, exactly 2:1 width to height.",
+      "The left edge must continue into the right edge exactly, since the map wraps around a sphere.",
+      "Keep the horizon roughly centred and level. A tilted or off-centre horizon breaks the illusion once mapped onto a sphere.",
+      "Soft, even, diffuse lighting reads best in reflections. Avoid one tiny hard sun unless the scene specifically calls for it.",
+    ],
+    directions: [
+      { name: "Studio neutral", idea: "A soft grey or white studio dome, for clean product reflections.", prompt: (s) => `Equirectangular 360-degree HDRI-style studio environment panorama for ${s}, 2:1 aspect ratio, full 360-degree horizontal wrap, soft even grey and white gradient dome, no visible seam at the left-right edge, centred level horizon, diffuse lighting, no text, no logos.` },
+      { name: "Outdoor sky", idea: "A soft sky with horizon, for outdoor 3D scenes.", prompt: (s) => `Equirectangular 360-degree outdoor sky environment panorama for ${s}, 2:1 aspect ratio, full 360-degree horizontal wrap, soft natural light, gentle clouds, centred level horizon, no visible seam at the left-right edge, no text, no logos.` },
+      { name: "Abstract glow", idea: "A dark scene with soft coloured glow, for a dramatic sci-fi 3D hero.", prompt: (s, b) => `Equirectangular 360-degree abstract environment panorama for ${s}, 2:1 aspect ratio, full 360-degree horizontal wrap, dark background with soft ${palette(b, "coloured")} glow, centred level horizon, no visible seam at the left-right edge, no text, no logos.` },
+    ],
+    critique: ["Does the left edge join the right edge without a seam, like a real 360 photo?", "Is the horizon centred and level?", "Would this look believable mapped onto a sphere and used for reflections?"],
+    provider: "codex only for this asset type. Flow's aspect picker has no 2:1 option and silently keeps its own default when an unlisted one is requested, so leave image_generate's aspect parameter unset and let the 2:1 instruction already in the prompt text do the work.",
+    aspect: "2:1",
+    finish: "Use directly as a Three.js equirectangular environment texture (THREE.EquirectangularReflectionMapping). media_optimize to WebP; keep resolution high since it drives reflections, not just display.",
+  },
 };
 
 
@@ -394,6 +430,8 @@ const DEFAULT_USAGE: Record<AssetType, string> = {
   "product-video": "as a short product clip on the website and social media",
   infographic: "to explain the whole product in one image on the README, website and social media",
   poster: "as a launch post on LinkedIn and other social feeds",
+  texture: "as a tileable background or material on the website or in a 3D scene",
+  "environment-map": "as a 360-degree reflection and lighting map in a Three.js or WebGL scene",
 };
 
 const ARTICLE: Record<AssetType, string> = {
@@ -406,6 +444,8 @@ const ARTICLE: Record<AssetType, string> = {
   banner: "a banner",
   "background-video": "a background video",
   "product-video": "a product video",
+  texture: "a tileable texture",
+  "environment-map": "a 360-degree environment map",
   infographic: "an infographic",
   poster: "a poster",
 };

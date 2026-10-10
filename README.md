@@ -142,6 +142,24 @@ Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISO
 
 Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
 
+## It knows 3D and WebGL sites need different assets
+
+Two more asset types for `design_brief`: `texture` (a seamless, tileable surface for a background or a Three.js material) and `environment-map` (a seamless 2:1 equirectangular panorama for reflections and lighting in a Three.js or WebGL scene). Each gets its own critique checklist instead of the usual photo-realism one, since neither is meant to be looked at directly.
+
+```sh
+loop_check(input_path=".ai-media/flow/hero-loop.mp4")
+```
+
+Compares a looping video's first and last frame the same way `media_optimize` checks quality loss, and tells you if the loop will actually look seamless before it ships.
+
+```sh
+palette_extract(input_path="public/images/hero.jpg", count=6)
+```
+
+Pulls the real dominant colours out of a generated (or any) image and returns a ready `:root` CSS block, so the site's design system can match what actually got made instead of a guess.
+
+The server also recognises the kind of project it's in on its own now: a GitHub repo, a single social post, a 3D/WebGL site, or an animated landing page, and reaches for the matching asset types without being told each time.
+
 ## It remembers what actually shipped
 
 `design_audit` can carry the `style` (tier and look) a draft used. Once enough drafts of one asset type have shipped under the same tier, `design_brief` defaults to it on its own next time, instead of always starting from premium. Ask for a specific tier or look and that always wins; this only fills in the gap when you didn't ask.
@@ -409,6 +427,9 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Can it make assets for a three.js or WebGL site?
+Yes: `design_brief` has an `environment-map` asset type (a seamless 2:1 panorama for reflections and lighting) and a `texture` asset type (a seamless tileable surface), on top of the usual hero and background-video. Both get checked for seams instead of photo-realism.
 
 ### Does Facebook or another platform penalise AI-made images?
 Not for being AI-made and disclosed as such; Meta has said that label alone doesn't cut reach. What does get penalised hard is content that reads as a real photo of an event or statement that never happened. design_brief now asks that question for every realistic asset type, and the honest fix is the same as always: make it obviously a graphic or a considered shot, not a faked real moment.

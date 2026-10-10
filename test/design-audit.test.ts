@@ -87,6 +87,38 @@ describe("alt text suggestion", () => {
   });
 });
 
+describe("texture and environment-map asset types", () => {
+  it("texture prompts ask for a seamless tile and nothing else to look at", () => {
+    const b = designBrief("texture", "brushed steel");
+    assert.match(b.directions[0].prompt, /[Ss]eamless tileable/);
+    assert.ok(b.critique.some((c) => /tile seamlessly/.test(c)));
+    assert.equal(b.recommended.aspect, "1:1");
+  });
+
+  it("environment-map prompts ask for a 2:1 equirectangular wrap with no seam", () => {
+    const b = designBrief("environment-map", "a calm studio dome");
+    for (const d of b.directions) {
+      assert.match(d.prompt, /[Ee]quirectangular/);
+      assert.match(d.prompt, /2:1/);
+    }
+    assert.ok(b.critique.some((c) => /left edge join the right edge/.test(c)));
+    assert.equal(b.recommended.aspect, "2:1");
+    assert.match(b.recommended.provider, /codex only/);
+  });
+
+  it("neither asset type gets the real-photo honesty question (they're technical maps, not scenes)", () => {
+    const texture = designBrief("texture", "x");
+    const env = designBrief("environment-map", "x");
+    assert.ok(!texture.critique.some((c) => /mistaken for a real photo/.test(c)));
+    assert.ok(!env.critique.some((c) => /mistaken for a real photo/.test(c)));
+  });
+
+  it("both get a sensible alt text template", () => {
+    const texture = designBrief("texture", "brushed steel", {}, {}, { project: "Acme" });
+    assert.match(texture.alt_text_suggestion, /^Acme: a tileable texture of brushed steel\./);
+  });
+});
+
 describe("preferred style from the learning journal", () => {
   it("is carried through unapplied when the caller already set their own tier", () => {
     const b = designBrief("hero", "x", {}, { tier: "minimal" }, {}, { preferredStyle: { tier: "premium", shipped: 5 } });

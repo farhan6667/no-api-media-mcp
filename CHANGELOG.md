@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.10.0 (2026-10-10)
+
+- **Two new asset types for 3D and WebGL sites.** `texture`: a seamless, tileable surface for a website
+  background or a Three.js material map. `environment-map`: a seamless 2:1 equirectangular panorama for
+  reflections and ambient lighting in a Three.js or WebGL scene. Both come with their own critique
+  questions (does it tile with no seam, does the left edge join the right edge) instead of the normal
+  photo-realism checklist, since neither is a picture anyone looks at directly.
+- **`loop_check`**: for a background-video or product-video meant to loop, compares its first and last
+  frame with the same structural-similarity check `media_optimize` already uses for quality loss, and
+  reports whether it will look seamless on repeat.
+- **`palette_extract`**: reads the dominant colours out of a real image and returns them as hex codes with
+  their share of the image, plus a ready `:root` CSS custom-properties block, so a site's design system can
+  be built to match what actually got generated instead of guessing. It names colours by how dominant they
+  are, never by a guessed role: deciding which one is the primary or the accent is still a human call.
+- **The server now recognises the kind of project it's in on its own**: a GitHub repo, a single social
+  post, a 3D/WebGL site (three.js, react-three-fiber, Babylon, Spline, checked the same way
+  `project_profile` already reads the project), or an animated landing page, and goes straight to the
+  matching asset types and tools instead of waiting to be told each time.
+- Tests: 195 pass, including a live run of `loop_check` against a real seamless and a real non-seamless
+  clip, and of `palette_extract` against a real generated image.
+
+
 ## 0.9.0 (2026-10-10)
 
 - **The server remembers what actually shipped.** `design_audit` can now carry the `style` (tier and look) a

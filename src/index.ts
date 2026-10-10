@@ -25,6 +25,8 @@ import { projectProfile, TIERS } from "./project.js";
 import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
 import { contactSheet, MAX_ITEMS as CONTACT_SHEET_MAX } from "./contact-sheet.js";
 import { readManifest, usageReport } from "./report.js";
+import { loopCheck } from "./loop-check.js";
+import { cssVariables, dominantColors } from "./palette.js";
 
 // Single source of truth for the version: package.json (two levels up from dist/src).
 const VERSION: string = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version;
@@ -133,6 +135,13 @@ const localGate = new JobGate(0);
  */
 const INSTRUCTIONS = `no-api-media makes images and videos with the user's own AI subscriptions. Never ask the user for an API key.
 
+Recognise what kind of project this is yourself, before asking, and go straight to the matching asset types and tools:
+- A GitHub repo (package.json, a .git folder, a README): hero/banner for the README, a logo, a github-social-1280x640 preview and a favicon. social_sizes covers all the standard sizes in one call.
+- A single social post or launch announcement (LinkedIn, X, Instagram, no project files involved): asset_type "social-post" or "poster", then social_sizes with the one platform preset that matches (linkedin-1200x627, x-1600x900, instagram-square-1080, and so on).
+- A website or portfolio that mentions three.js, react-three-fiber, @react-three, babylon, spline or WebGL (check package.json and the code, project_profile already reads these files): reach for asset_type "environment-map" for reflections and ambient lighting and "texture" for tileable materials or backgrounds, on top of the usual hero and background-video. Run loop_check on any looping clip before it ships; run contact_sheet when there are several candidate environment maps or textures to compare.
+- An animated landing page or portfolio (motion, framer-motion, gsap, lottie in package.json, or the user says "animated"): asset_type "background-video" or "product-video", built with the motion timing already baked into those playbooks, then loop_check before calling it done.
+Any of these can combine (a GitHub repo for a three.js site needs both the repo treatment and the 3D-specific assets). When none of this matches, fall back to asking what the asset is for.
+
 When the user asks for any image or video for their project, do this without asking them to write prompts:
 1. Call project_profile. Open the reference images it lists to see the current look.
 2. Decide the slots yourself: where the asset goes (hero, OG image, feature icons, background video...), size, file path in the project's asset folder.
@@ -150,6 +159,8 @@ When the user asks for any image or video for their project, do this without ask
 7. media_optimize the winner into the real asset folder (the project's own images folder, never leave a final in .ai-media), wire it into the code with width, height and real alt text, then check the page. design_brief's alt_text_suggestion is a starting template, not a finished description: replace it with what the image actually shows once you've looked at it. Drafts in .ai-media are cleaned up on their own: rejected ones after a few days, used ones after a couple of weeks (media_cleanup shows or does it on demand).
    media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
 8. Comparing several directions or iterations before picking one? Call contact_sheet to lay them on one grid instead of opening each file alone. Curious what's actually been generated in a project over time? usage_report totals the local manifest by provider, type and day, no uploads.
+   Want the site's CSS variables to actually match a generated hero or banner instead of guessing? Run palette_extract on the chosen file and wire its colours into the stylesheet; it names them by how dominant they are, not by a guessed role, so pick which one is the primary or the accent yourself.
+   For a texture or environment-map, verify the tile or the seam for real before using it: contact_sheet with four copies of a texture shows a repeat at a glance, and the 2:1 wrap on an environment-map should be checked by eye at the left-right edge.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
 const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
@@ -890,6 +901,54 @@ server.registerTool(
       } finally {
         p.done();
       }
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "loop_check",
+  {
+    title: "Check a looping video for a visible seam",
+    description:
+      "For a background-video or product-video meant to loop: compares its first and last frame with the same structural-similarity check media_optimize uses for quality loss, and reports whether it will " +
+      "look seamless on repeat. A low similarity means a visible jump or jerk when it loops; regenerate with a direction that explicitly brings the motion back to where it started.",
+    inputSchema: {
+      input_path: z.string().max(500),
+    },
+  },
+  async (a) => {
+    try {
+      const { file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("video/")) throw new Error("loop_check works on videos.");
+      const r = await loopCheck(file);
+      return ok(r);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "palette_extract",
+  {
+    title: "Pull a website colour palette from an image",
+    description:
+      "Reads the dominant colours out of a real image (a generated hero, banner or any photo) and returns them as hex codes with their share of the image, plus a ready :root CSS custom-properties block. " +
+      "This is a colour histogram, not a brand decision: it names the colours --palette-1, --palette-2 and so on by how much of the image they cover, most dominant first. Decide yourself which one is the " +
+      "primary, the accent or the background before wiring it into a stylesheet.",
+    inputSchema: {
+      input_path: z.string().max(500),
+      count: z.number().int().min(1).max(12).default(6),
+    },
+  },
+  async (a) => {
+    try {
+      const { file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("palette_extract works on images.");
+      const colors = await dominantColors(file, a.count);
+      return ok({ colors, css: cssVariables(colors) });
     } catch (e) {
       return fail(e);
     }

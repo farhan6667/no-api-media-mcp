@@ -142,6 +142,16 @@ Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISO
 
 Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
 
+## It falls back when a provider breaks
+
+Browser-driven providers depend on the site's own pages, and a redesign can break a selector overnight. Pass `fallback_providers` to `image_generate` and it tries the next one automatically instead of failing the whole run:
+
+```sh
+image_generate(provider="flow", fallback_providers=["codex", "gemini"], ...)
+```
+
+The result always lists every attempt and why each one failed, so nothing is silently swallowed. A second local journal (separate from the design one) tracks these outcomes, and when a provider fails the same way three times in a row, the next error says so plainly instead of staying a mystery.
+
 ## It checks for a new version
 
 Once a day, the server checks this project's GitHub releases. If a newer one is out, it tells you at startup
@@ -383,6 +393,9 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### What happens if a provider's page changes and a call breaks?
+Pass `fallback_providers` to `image_generate` (for example `["codex", "gemini"]`) and it tries the next one in order. The result reports every attempt and its failure reason. A local, redacted journal also tracks this over time, so a real pattern (the same provider failing the same way repeatedly) gets called out instead of looking like one bad run.
 
 ### Does it know who the image is for?
 If you tell `design_brief` who sees it (`context.audience`), it recognises a short list of real audiences (CISOs, developers, the open source community, security analysts, the general public) and adjusts tone, default tier, palette and the critique question accordingly. It won't guess an audience you didn't name.

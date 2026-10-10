@@ -17,6 +17,7 @@ import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type Flo
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
 import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look } from "./design.js";
 import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
+import { classifyFailure, providerHealth, readReliability, recordProviderOutcome } from "./reliability.js";
 import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
 import { learnedFor, learnedSentence, readJournal, record } from "./learning.js";
 import { lessonsFor } from "./lessons.js";
@@ -520,7 +521,7 @@ server.registerTool(
       "Generates one image (Flow and Higgsfield can return several) and saves the full-quality file inside the project. " +
       "Providers: codex (ChatGPT plan via Codex CLI, most reliable), chatgpt (chatgpt.com), flow (Google Flow, Nano Banana 2, usually 0 credits), gemini (gemini.google.com), " +
       "higgsfield (official CLI, costs credits: quote first), plus any JSON-defined site (call providers_list). " +
-      "Without output_path the file goes to <project>/.ai-media/<provider>/. Look at the result yourself before using it.",
+      "Without output_path the file goes to <project>/.ai-media/<provider>/. Look at the result yourself before using it. Pass fallback_providers to try others in order if the first one fails.",
     inputSchema: {
       provider: z.string().max(40),
       prompt: z.string().min(3).max(4000),
@@ -531,43 +532,47 @@ server.registerTool(
       model: z.string().max(60).optional().describe("Higgsfield only, e.g. nano_banana_2, gpt_image_2_5"),
       max_credits: z.number().int().min(0).max(5000).default(0).describe("Higgsfield only: quote first, then cap"),
       overwrite: z.boolean().default(false),
+      fallback_providers: z.array(z.string().max(40)).max(4).optional().describe("Try these in order if the first provider fails (for example a site redesign broke a selector). Each attempt and why it failed is reported in the result."),
     },
   },
   async (a, extra: Extra) => {
     try {
-      if (!knownProvider(a.provider)) throw new Error(`Unknown provider "${a.provider}". Call providers_list.`);
+      const candidates = [a.provider, ...(a.fallback_providers ?? [])];
+      for (const c of candidates) if (!knownProvider(c)) throw new Error(`Unknown provider "${c}". Call providers_list.`);
       precheck(a.output_path, a.overwrite);
     } catch (e) {
       return fail(e);
     }
-    return job(extra, a.provider, `${a.provider} image`, async (onTick) => {
-      if (a.provider === "codex") {
+
+    /** One provider's actual image call. Returns the plain result data; throws on failure. Unchanged from before the fallback chain was added. */
+    async function attemptImage(provider: string, onTick: (ms: number) => void): Promise<Record<string, unknown>> {
+      if (provider === "codex") {
         const r = await codexImage(a.prompt, a.aspect, extra.signal);
-        return ok({ saved: [save(r.data, "codex", a.prompt, a.output_path, a.overwrite)], via: r.note });
+        return { saved: [save(r.data, "codex", a.prompt, a.output_path, a.overwrite)], via: r.note };
       }
-      if (a.provider === "higgsfield") {
+      if (provider === "higgsfield") {
         if (a.max_credits < 1) throw new Error("Higgsfield images spend credits. Call video_quote with provider higgsfield and the image model, tell the user, then pass max_credits.");
         const r = await higgsfieldGenerate(a.model ?? "nano_banana_2", a.prompt, { aspect_ratio: a.aspect }, a.max_credits, extra.signal);
         const saved = [];
         for (const [i, u] of r.urls.entries()) saved.push(save(await downloadHttps(u, extra.signal), "higgsfield", a.prompt, numbered(a.output_path, i), a.overwrite));
-        return ok({ saved, credits: r.credits, via: "Higgsfield CLI" });
+        return { saved, credits: r.credits, via: "Higgsfield CLI" };
       }
       const page = await browser.page(extra.signal);
       try {
-        if (a.provider === "chatgpt") {
+        if (provider === "chatgpt") {
           try {
             const r = await chatgptImage(page, a.prompt, a.aspect, onTick);
-            return ok({ saved: [save(r.data, "chatgpt", a.prompt, a.output_path, a.overwrite)], via: r.note });
+            return { saved: [save(r.data, "chatgpt", a.prompt, a.output_path, a.overwrite)], via: r.note };
           } catch (e) {
             const reply = await chatgptLastReply(page);
             throw new Error(`${(e as Error).message}${reply ? `\nChatGPT said: ${reply}` : ""}`);
           }
         }
-        if (a.provider === "gemini") {
+        if (provider === "gemini") {
           const r = await geminiImage(page, a.prompt, cfg.googleEmail, onTick);
-          return ok({ saved: [save(r.data, "gemini", a.prompt, a.output_path, a.overwrite)], account: r.account });
+          return { saved: [save(r.data, "gemini", a.prompt, a.output_path, a.overwrite)], account: r.account };
         }
-        if (a.provider === "flow") {
+        if (provider === "flow") {
           const r = await flowGenerate(page, {
             email: cfg.googleEmail,
             prompt: a.prompt,
@@ -580,15 +585,38 @@ server.registerTool(
             onTick,
           });
           writeState(cfg, { flowProject: r.project });
-          return ok({ saved: r.files.map((buf, i) => save(buf, "flow", a.prompt, numbered(a.output_path, i), a.overwrite)), credits: r.credits, account: r.account });
+          return { saved: r.files.map((buf, i) => save(buf, "flow", a.prompt, numbered(a.output_path, i), a.overwrite)), credits: r.credits, account: r.account };
         }
-        const spec = specs.specs.find((s) => s.id === a.provider)!;
+        const spec = specs.specs.find((s) => s.id === provider)!;
         const prompt = a.aspect ? `${a.prompt} (aspect ratio ${a.aspect})` : a.prompt;
         const data = await genericGenerate(page, spec, "image", prompt, onTick);
-        return ok({ saved: [save(data, spec.id, a.prompt, a.output_path, a.overwrite)], via: spec.name });
+        return { saved: [save(data, spec.id, a.prompt, a.output_path, a.overwrite)], via: spec.name };
       } finally {
         await page.close().catch(() => undefined);
       }
+    }
+
+    return job(extra, a.provider, `${a.provider} image`, async (onTick) => {
+      const candidates = [a.provider, ...(a.fallback_providers ?? [])];
+      const tried: { provider: string; ok: boolean; reason?: string }[] = [];
+      let lastError: Error | undefined;
+      for (const provider of candidates) {
+        try {
+          const result = await attemptImage(provider, onTick);
+          recordProviderOutcome(cfg.home, provider, true);
+          return ok(tried.length ? { ...result, fallback_used: { attempted: [...tried, { provider, ok: true }] } } : result);
+        } catch (e) {
+          const message = (e as Error).message ?? String(e);
+          const cls = classifyFailure(message);
+          recordProviderOutcome(cfg.home, provider, false, cls, message);
+          tried.push({ provider, ok: false, reason: `${cls}: ${message.slice(0, 200)}` });
+          lastError = e as Error;
+        }
+      }
+      const health = providerHealth(readReliability(cfg.home), a.provider).note;
+      throw new Error(
+        `Every provider failed: ${tried.map((t) => `${t.provider} (${t.reason})`).join("; ")}.${health ? ` ${health}` : ""}${lastError ? "" : ""}`,
+      );
     }).catch(fail);
   },
 );

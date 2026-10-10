@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 (2026-10-10)
+
+- **A provider that fails doesn't stop the run.** `image_generate` accepts `fallback_providers`: an ordered
+  list to try if the first one fails, for example a site redesign breaking a browser-driven provider's
+  selector. The result reports every attempt and why each one failed, so nothing is hidden.
+- **A second local journal, this one operational.** Every provider call's outcome is recorded (success, or a
+  failure classified as login, quota, timeout, selector or network), separate from the design-quality journal
+  in `design_audit`. When a provider fails three times in a row with the same kind of error, the next failure
+  message says so plainly: that is a real pattern, not a one-off, and is the kind of thing SECURITY.md already
+  warns can happen when a site changes its page. Nothing here is uploaded; messages are redacted before being
+  written to disk.
+- Tests: 170 pass, including a live run that made Gemini fail for real (no account signed in) and confirmed
+  it fell through to Codex and reported both attempts.
+
+
 ## 0.7.0 (2026-10-10)
 
 - **Audience personas.** `design_brief` now recognises who the asset is actually for from `context.audience`

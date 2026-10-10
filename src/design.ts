@@ -5,6 +5,7 @@
  *
  * This is deterministic text, no model call: the client's own model does the thinking, guided by it.
  */
+import { matchPersona } from "./audience.js";
 
 export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "infographic", "poster", "background-video", "product-video"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
@@ -40,6 +41,17 @@ const avoid = (b: Brand, base: string[]) => [...base, ...(b.avoid ?? [])].join("
 const LOGO_AVOID = [
   "text", "letters", "words", "gradients", "drop shadows", "3D bevels", "glossy highlights", "stock clip-art icons",
   "app-icon rounded squares", "warning or prohibition signs", "busy detail", "more than two shapes",
+];
+
+/**
+ * Timing and easing a generated clip should follow, sourced from the design skill's motion guidance
+ * (not a JS animation library: this server renders real video, it doesn't run Framer Motion or GSAP).
+ */
+const MOTION_TIMING = [
+  "Ease out as any movement settles, ease in as it leaves; never linear, never a hard stop",
+  "If something exits, make it faster than its entrance, about two thirds the time",
+  "One clear cause and effect per shot; motion that doesn't express anything reads as decoration",
+  "Keep a shot's own camera move to one idea (a push, a pan, an orbit), not several layered at once",
 ];
 
 const PLAYBOOKS: Record<AssetType, Playbook> = {
@@ -181,7 +193,7 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
   },
   "background-video": {
     goal: "A short calm loop behind a hero that never fights the headline.",
-    principles: ["Slow camera motion, no cuts", "Low contrast, no faces looking at the camera", "Start and end frames similar so it loops", "No audio"],
+    principles: ["Slow camera motion, no cuts", "Low contrast, no faces looking at the camera", "Start and end frames similar so it loops", "No audio", ...MOTION_TIMING],
     directions: [
       { name: "Slow push-in", idea: "Gentle dolly.", prompt: (s, b) => `Slow cinematic push-in shot of ${s}, soft light, ${palette(b, "muted palette")}, very gentle motion, seamless loop feel, no text, no people facing camera.` },
       { name: "Ambient motion", idea: "Particles, light, water.", prompt: (s) => `Ambient abstract motion: ${s}, slow drifting light and particles, calm, loopable, no text.` },
@@ -194,7 +206,7 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
   },
   "product-video": {
     goal: "A short clip that shows the product doing its thing.",
-    principles: ["One action per shot", "Describe camera, subject, action, light, in that order", "Keep it under 8 seconds per shot"],
+    principles: ["One action per shot", "Describe camera, subject, action, light, in that order", "Keep it under 8 seconds per shot", ...MOTION_TIMING],
     directions: [
       { name: "Orbit", idea: "Camera circles the product.", prompt: (s) => `Smooth 180-degree orbit around ${s} on a clean studio set, soft key light, reflections, no text.` },
       { name: "In use", idea: "Hands using it.", prompt: (s) => `Close-up of hands using ${s}, natural light, realistic motion, shallow depth of field, no text.` },
@@ -534,9 +546,15 @@ const TIER_STYLE: Record<NonNullable<Style["tier"]>, { look: string; logo: strin
   },
 };
 
+/**
+ * Motion-design heuristics (not a JS animation library: this server renders real video, it doesn't run
+ * Framer Motion or GSAP), sourced from the same design skill's motion guidance: ease-out on the way in and
+ * ease-in on the way out, an exit shorter than the entrance, spatial continuity, motion that expresses a
+ * cause and effect rather than decoration for its own sake.
+ */
 const MOTION_STYLE: Record<NonNullable<Style["motion"]>, string> = {
   "3d": "rendered as high-end 3D: physically based materials, soft global illumination, depth of field, glass and subtle subsurface where fitting, like an Octane or Blender Cycles studio render",
-  animated: "designed to feel alive: dynamic composition, implied motion, layered depth that works well with parallax and scroll animation",
+  animated: "designed to feel alive: dynamic composition, implied motion, layered depth that works well with parallax and scroll animation, movement that eases out as it settles rather than stopping abruptly",
   static: "",
 };
 
@@ -577,11 +595,15 @@ export interface BriefExtra {
 export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}, extra: BriefExtra = {}) {
   const p = PLAYBOOKS[asset];
   const cueField = domainCues(subject, ctx.project, ctx.about, ctx.goal)?.field;
-  if (!brand.colors?.length && cueField && PALETTES[cueField]) brand = { ...brand, colors: PALETTES[cueField] };
+  const persona = matchPersona(ctx.audience, brand.audience);
+  if (!brand.colors?.length) {
+    if (cueField && PALETTES[cueField]) brand = { ...brand, colors: PALETTES[cueField] };
+    else if (persona?.paletteHint) brand = { ...brand, colors: persona.paletteHint };
+  }
   const typography = (cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING;
   // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
-  const s: Style = { ...style, tier: style.tier ?? "premium" };
-  const extraCritique = [TIER_STYLE[s.tier!].critique];
+  const s: Style = { ...style, tier: style.tier ?? persona?.tierHint ?? "premium" };
+  const extraCritique = [TIER_STYLE[s.tier!].critique, ...(persona ? [persona.critique] : [])];
   return {
     asset,
     style: s,
@@ -591,12 +613,14 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
       name: d.name,
       idea: d.idea,
       prompt: withAdvice(narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx), [
+        ...(persona ? [`Who is actually looking at this: ${persona.tone}`] : []),
         ...(extra.learned ? [extra.learned] : []),
         ...(extra.lessons?.length ? [`Rules learned from past results: ${extra.lessons.join(" ")}`] : []),
       ]),
     })),
     learned: extra.learnedItems ?? [],
     typography: asset === "logo" ? undefined : { ...typography, note: "Use this pairing for any real wordmark or text you composite afterwards, loaded from its Google Fonts URL, instead of a generic system font." },
+    audience_persona: persona ? { id: persona.id, tone: persona.tone } : undefined,
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

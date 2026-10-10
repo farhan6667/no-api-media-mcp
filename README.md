@@ -128,6 +128,20 @@ Both of these came out of the prompts above, through Google Flow on an AI Pro pl
 <img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/poster.webp" width="42%" alt="Make images and videos with the AI plan you already pay for. No API keys, no second bill. Works in Claude Code, Cursor, Codex and any MCP client">
 </p>
 
+## It designs for who's actually looking
+
+Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISOs", "developers", "the open source community", "security analysts", "the general public") and it recognises a few real audiences and changes the art direction for them: tone, a default style tier and a palette when you haven't set your own, plus one honest critique question asked from that reader's seat.
+
+| You said | It assumes | Tier | A question it adds |
+|---|---|---|---|
+| CISOs, executives, buyers | time-pressed, skeptical of a hard sell | corporate | Would they get the one thing that matters in three seconds? |
+| developers, engineers | can tell marketing gloss from substance | minimal | Would they believe it, or tune it out? |
+| the open source community, GitHub | scanning a repo list, not a product page | premium | Does it read as open source, not a corporate ad? |
+| security analysts, pentesters, SOC teams | seen a hundred vendor decks already | premium | Would a working analyst trust it? |
+| the general public, gamers, consumers | scrolling for fun | playful | Is it fun without turning childish? |
+
+Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
+
 ## It checks for a new version
 
 Once a day, the server checks this project's GitHub releases. If a newer one is out, it tells you at startup
@@ -369,6 +383,9 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Does it know who the image is for?
+If you tell `design_brief` who sees it (`context.audience`), it recognises a short list of real audiences (CISOs, developers, the open source community, security analysts, the general public) and adjusts tone, default tier, palette and the critique question accordingly. It won't guess an audience you didn't name.
 
 ### Will it update itself without telling me?
 No. It checks once a day and tells you when a newer version exists, with the exact command to run. It only installs it for you if you explicitly set `NOAPI_AUTO_UPDATE=1`, and even then only for the next run, never while the server is live.

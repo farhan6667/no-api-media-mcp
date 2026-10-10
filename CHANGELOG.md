@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 (2026-10-10)
+
+- **Audience personas.** `design_brief` now recognises who the asset is actually for from `context.audience`
+  (an executive/CISO, developers, the open source community, security analysts, or the general public),
+  sourced from a reviewed design skill's product and style data, not invented. Each one changes the art
+  direction's tone, its default tier and palette (only when you didn't set your own), and adds one honest
+  critique question asked from that reader's seat, for example "would a developer believe this, or tune it
+  out as marketing?". The brief reports which persona matched so you can see the reasoning.
+- **Motion timing grounded in real motion-design guidance**, not invented: ease out on the way in, ease in on
+  the way out, an exit about two thirds the length of the entrance, one cause-and-effect per shot. Folded
+  into the background-video and product-video briefs. This project renders real video with ffmpeg; it has
+  no runtime dependency on an animation library, the guidance just comes from the same source.
+- Tests: 154 pass.
+
+
 ## 0.6.0 (2026-10-10)
 
 - **Checks for a new version.** Once a day (configurable), the server checks this project's GitHub releases and

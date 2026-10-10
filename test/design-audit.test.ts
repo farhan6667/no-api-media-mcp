@@ -64,3 +64,45 @@ describe("domain cues and third-party names", () => {
     assert.match(b.directions[0].prompt, /independent project/);
   });
 });
+
+describe("platform honesty critique", () => {
+  it("asks the deceptive-content question for assets realistic enough to be mistaken for a real photo", () => {
+    const b = designBrief("hero", "a team at work");
+    assert.ok(b.critique.some((c) => /mistaken for a real photo/.test(c)));
+  });
+
+  it("skips the question for a flat logo or app icon, which can't pass as a real photo", () => {
+    const logo = designBrief("logo", "a shield mark");
+    const icon = designBrief("app-icon", "a shield mark");
+    assert.ok(!logo.critique.some((c) => /mistaken for a real photo/.test(c)));
+    assert.ok(!icon.critique.some((c) => /mistaken for a real photo/.test(c)));
+  });
+});
+
+describe("alt text suggestion", () => {
+  it("gives a labelled starting template, not a fabricated description", () => {
+    const b = designBrief("hero", "a calm workspace", {}, {}, { project: "Acme" });
+    assert.match(b.alt_text_suggestion, /^Acme: a hero image of a calm workspace\./);
+    assert.match(b.alt_text_suggestion, /template, not a description/);
+  });
+});
+
+describe("preferred style from the learning journal", () => {
+  it("is carried through unapplied when the caller already set their own tier", () => {
+    const b = designBrief("hero", "x", {}, { tier: "minimal" }, {}, { preferredStyle: { tier: "premium", shipped: 5 } });
+    assert.equal(b.style.tier, "minimal");
+    assert.equal(b.preferred_style?.applied, false);
+  });
+
+  it("is applied as the default tier when the caller left it unset", () => {
+    const b = designBrief("hero", "x", {}, {}, {}, { preferredStyle: { tier: "luxury", look: "luxury-gold", shipped: 4 } });
+    assert.equal(b.style.tier, "luxury");
+    assert.equal(b.style.look, "luxury-gold");
+    assert.equal(b.preferred_style?.applied, true);
+  });
+
+  it("ignores a garbled tier or look name rather than crashing", () => {
+    const b = designBrief("hero", "x", {}, {}, {}, { preferredStyle: { tier: "not-a-real-tier", shipped: 4 } });
+    assert.equal(b.style.tier, "premium");
+  });
+});

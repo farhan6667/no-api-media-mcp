@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { ASSET_TYPES, AUDIT_RUBRIC, designBrief, parseAspect, PROMPT_BUDGET, withAdvice } from "../src/design.js";
-import { journalPath, learnedFor, learnedSentence, readJournal, record } from "../src/learning.js";
+import { journalPath, learnedFor, learnedSentence, preferredStyleFor, readJournal, record } from "../src/learning.js";
 import { LESSONS, lessonsFor } from "../src/lessons.js";
 
 const home = mkdtempSync(join(tmpdir(), "noapi-learn-"));
@@ -56,6 +56,41 @@ describe("learning from audits", () => {
       assert.match(d.prompt, /Rules learned from past results/);
       assert.match(d.prompt, /very wide \(3\.2:1\)/);
     }
+  });
+});
+
+describe("preferredStyleFor", () => {
+  const home2 = mkdtempSync(join(tmpdir(), "noapi-preferred-"));
+  after(() => rmSync(home2, { recursive: true, force: true }));
+
+  it("says nothing until there are enough shipped drafts", () => {
+    record(home2, { asset: "hero", scores: all(5), average: 5, verdict: "ship", tier: "premium" });
+    record(home2, { asset: "hero", scores: all(5), average: 5, verdict: "ship", tier: "premium" });
+    assert.equal(preferredStyleFor(readJournal(home2), "hero"), undefined);
+  });
+
+  it("picks the tier and look that shipped most once there's a real majority", () => {
+    record(home2, { asset: "hero", scores: all(5), average: 5, verdict: "ship", tier: "premium", look: "neon-glass" });
+    const r = preferredStyleFor(readJournal(home2), "hero");
+    assert.equal(r?.tier, "premium");
+    assert.equal(r?.look, "neon-glass");
+    assert.equal(r?.shipped, 3);
+  });
+
+  it("ignores revise and other asset types", () => {
+    record(home2, { asset: "hero", scores: all(2), average: 2, verdict: "revise", tier: "minimal" });
+    record(home2, { asset: "banner", scores: all(5), average: 5, verdict: "ship", tier: "minimal" });
+    const r = preferredStyleFor(readJournal(home2), "hero");
+    assert.equal(r?.tier, "premium");
+  });
+
+  it("refuses to pick a tier that is only a plurality, not a majority", () => {
+    const home3 = mkdtempSync(join(tmpdir(), "noapi-preferred2-"));
+    record(home3, { asset: "poster", scores: all(5), average: 5, verdict: "ship", tier: "premium" });
+    record(home3, { asset: "poster", scores: all(5), average: 5, verdict: "ship", tier: "luxury" });
+    record(home3, { asset: "poster", scores: all(5), average: 5, verdict: "ship", tier: "minimal" });
+    assert.equal(preferredStyleFor(readJournal(home3), "poster"), undefined);
+    rmSync(home3, { recursive: true, force: true });
   });
 });
 

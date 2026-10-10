@@ -44,6 +44,12 @@ describe("social size presets", () => {
   it("icons are PNG so they stay crisp and transparent", () => {
     for (const k of ["favicon-32", "apple-touch-180", "icon-512"] as const) assert.equal(SOCIAL_PRESETS[k].ext, ".png");
   });
+  it("cover other platforms the user asked for: Facebook, YouTube, X and TikTok", () => {
+    assert.deepEqual([SOCIAL_PRESETS["facebook-cover-820x312"].w, SOCIAL_PRESETS["facebook-cover-820x312"].h], [820, 312]);
+    assert.deepEqual([SOCIAL_PRESETS["youtube-banner-2560x1440"].w, SOCIAL_PRESETS["youtube-banner-2560x1440"].h], [2560, 1440]);
+    assert.deepEqual([SOCIAL_PRESETS["x-header-1500x500"].w, SOCIAL_PRESETS["x-header-1500x500"].h], [1500, 500]);
+    assert.deepEqual([SOCIAL_PRESETS["tiktok-profile-200x200"].w, SOCIAL_PRESETS["tiktok-profile-200x200"].h], [200, 200]);
+  });
 });
 
 describe("creative briefs", () => {

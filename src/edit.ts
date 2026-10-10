@@ -88,6 +88,11 @@ export const SOCIAL_PRESETS = {
   "youtube-thumb-1280x720": { w: 1280, h: 720, ext: ".jpg" },
   "pinterest-1000x1500": { w: 1000, h: 1500, ext: ".jpg" },
   "github-social-1280x640": { w: 1280, h: 640, ext: ".jpg" },
+  "facebook-cover-820x312": { w: 820, h: 312, ext: ".jpg" },
+  "facebook-event-1920x1005": { w: 1920, h: 1005, ext: ".jpg" },
+  "youtube-banner-2560x1440": { w: 2560, h: 1440, ext: ".jpg" },
+  "x-header-1500x500": { w: 1500, h: 500, ext: ".jpg" },
+  "tiktok-profile-200x200": { w: 200, h: 200, ext: ".jpg" },
 } as const;
 export type SocialPreset = keyof typeof SOCIAL_PRESETS;
 

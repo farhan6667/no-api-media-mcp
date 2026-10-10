@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.0 (2026-10-10)
+
+- **The server remembers what actually shipped.** `design_audit` can now carry the `style` (tier and look) a
+  draft used. Once enough drafts of one asset type have shipped under a real majority tier, `design_brief`
+  defaults to that tier (and look) on its own, instead of always falling back to premium. An explicit tier or
+  look you ask for still always wins.
+- **One honest question added for every realistic asset.** Meta has said a plain AI disclosure label does not
+  by itself cut a post's reach; what does get penalised is content that reads as a real photo of something
+  that never happened. `design_brief`'s critique list now asks that question directly for hero images,
+  illustrations, product shots, social posts, banners, posters, infographics and video (a flat logo or app
+  icon is excluded, since neither can be mistaken for a photo).
+- **A starting point for alt text.** Every `design_brief` response now includes `alt_text_suggestion`: a
+  template built from the asset type and subject, clearly marked as a placeholder to replace once the result
+  has actually been looked at, never a fabricated description.
+- **More platforms in `social_sizes`.** Added Facebook cover and event cover, a YouTube channel banner, an
+  X/Twitter profile header, and a TikTok profile size, with a note on keeping the subject inside the centre
+  third so it survives different crops on different devices.
+- **`contact_sheet`**: lays up to 12 draft images out on one grid for side-by-side comparison, so directions
+  or iterations can be judged against each other instead of one at a time. No text is drawn into the image;
+  the result lists which grid position holds which file instead.
+- **`usage_report`**: totals a project's own `.ai-media/manifest.jsonl` by provider, file type and day.
+  Nothing leaves the machine; it only reads what the server already wrote while saving each result.
+- Tests: 189 pass, including a live run of `contact_sheet` against two real drafts (confirmed a real JPEG
+  grid on disk) and of `usage_report` against a real manifest.
+
+
 ## 0.8.0 (2026-10-10)
 
 - **A provider that fails doesn't stop the run.** `image_generate` accepts `fallback_providers`: an ordered

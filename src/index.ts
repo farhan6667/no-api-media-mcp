@@ -19,10 +19,12 @@ import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look }
 import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
 import { classifyFailure, providerHealth, readReliability, recordProviderOutcome } from "./reliability.js";
 import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
-import { learnedFor, learnedSentence, readJournal, record } from "./learning.js";
+import { learnedFor, learnedSentence, preferredStyleFor, readJournal, record } from "./learning.js";
 import { lessonsFor } from "./lessons.js";
 import { projectProfile, TIERS } from "./project.js";
 import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
+import { contactSheet, MAX_ITEMS as CONTACT_SHEET_MAX } from "./contact-sheet.js";
+import { readManifest, usageReport } from "./report.js";
 
 // Single source of truth for the version: package.json (two levels up from dist/src).
 const VERSION: string = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version;
@@ -145,8 +147,9 @@ When the user asks for any image or video for their project, do this without ask
    Always set context.targetAspect to the shape the image will finally be cropped to (a profile banner is about 3.2:1).
    Compose real logos and text over generated art yourself: a black-background logo goes on a dark glass plate or a feathered mask, never plain screen blending.
    design_brief also suggests a brand palette and a heading/body Google Fonts pairing when you didn't supply your own (curated, not invented). Load that font pairing's Google Fonts URL in the HTML you render for the wordmark and any composited text, instead of a generic system font: a real display font is most of what separates a premium banner from a plain one.
-7. media_optimize the winner into the real asset folder (the project's own images folder, never leave a final in .ai-media), wire it into the code with width, height and real alt text, then check the page. Drafts in .ai-media are cleaned up on their own: rejected ones after a few days, used ones after a couple of weeks (media_cleanup shows or does it on demand).
+7. media_optimize the winner into the real asset folder (the project's own images folder, never leave a final in .ai-media), wire it into the code with width, height and real alt text, then check the page. design_brief's alt_text_suggestion is a starting template, not a finished description: replace it with what the image actually shows once you've looked at it. Drafts in .ai-media are cleaned up on their own: rejected ones after a few days, used ones after a couple of weeks (media_cleanup shows or does it on demand).
    media_optimize strips embedded metadata (EXIF, XMP, C2PA content credentials) from its output by default and reports what it removed; if the user wants provenance kept, pass keep_metadata: true. It never touches invisible watermarks.
+8. Comparing several directions or iterations before picking one? Call contact_sheet to lay them on one grid instead of opening each file alone. Curious what's actually been generated in a project over time? usage_report totals the local manifest by provider, type and day, no uploads.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
 const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
@@ -356,8 +359,16 @@ server.registerTool(
     },
   },
   async (a) => {
-    const items = learnedFor(readJournal(cfg.home), a.asset_type);
-    return ok(designBrief(a.asset_type, a.subject, a.brand, a.style, a.context, { learned: learnedSentence(items), learnedItems: items, lessons: lessonsFor(a.asset_type) }));
+    const journal = readJournal(cfg.home);
+    const items = learnedFor(journal, a.asset_type);
+    return ok(
+      designBrief(a.asset_type, a.subject, a.brand, a.style, a.context, {
+        learned: learnedSentence(items),
+        learnedItems: items,
+        lessons: lessonsFor(a.asset_type),
+        preferredStyle: preferredStyleFor(journal, a.asset_type),
+      }),
+    );
   },
 );
 
@@ -370,18 +381,23 @@ server.registerTool(
       "and pass the scores here. Returns ship or revise, the weakest points and the exact fix for each. Call with no scores to get the criteria. " +
       "Be harsh: a generic, flat or template-looking result scores 2 or 3. " +
       "Pass asset_type so the server learns what usually goes wrong and warns you up front next time. " +
-      "Pass file (the draft inside .ai-media) so a revise marks it rejected, which lets it be cleaned up later, and a ship marks it shortlisted.",
+      "Pass file (the draft inside .ai-media) so a revise marks it rejected, which lets it be cleaned up later, and a ship marks it shortlisted. " +
+      "Pass style.tier and style.look (whatever you actually passed to design_brief) so the server can remember, once enough drafts have shipped, which tier and look tend to work for this asset type and suggest it by default next time.",
     inputSchema: {
       scores: z.record(z.string().max(30), z.number().min(0).max(5)).default({}),
       asset_type: z.enum(ASSET_TYPES).optional(),
       file: z.string().max(500).optional().describe("The draft you scored, relative to the project, e.g. .ai-media/codex/banner.png"),
+      style: z
+        .object({ tier: z.enum(TIERS).optional(), look: z.enum(Object.keys(LOOKS) as [Look, ...Look[]]).optional() })
+        .optional()
+        .describe("The style you actually used for this draft, so a shipped result can be remembered"),
     },
   },
   async (a) => {
     try {
       if (!Object.keys(a.scores).length) return ok({ criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })), pass: "average 4 or more, nothing below 3" });
       const result = auditScores(a.scores);
-      if (a.asset_type) record(cfg.home, { asset: a.asset_type, scores: a.scores, average: result.average, verdict: result.verdict });
+      if (a.asset_type) record(cfg.home, { asset: a.asset_type, scores: a.scores, average: result.average, verdict: result.verdict, tier: a.style?.tier, look: a.style?.look });
       let marked: string | undefined;
       if (a.file) {
         const root = realpathSync(cfg.outputRoots[0]);
@@ -810,9 +826,11 @@ server.registerTool(
   {
     title: "Make every social and web size from one image",
     description:
-      "From one image, makes the sizes people need: Open Graph, LinkedIn, X, Instagram square/portrait/story, YouTube thumbnail, Pinterest, " +
-      "GitHub social preview, favicon and app icons. fit: cover (fill and crop, photos), contain (whole image on a blurred copy of itself, logos and posters), " +
-      "pad (whole image on a solid colour). Files go to the output folder named after each preset.",
+      "From one image, makes the sizes people need: Open Graph, LinkedIn, X (post and profile header), Instagram square/portrait/story, " +
+      "YouTube thumbnail and channel banner, Facebook cover and event cover, Pinterest, TikTok profile, GitHub social preview, favicon and app icons. " +
+      "fit: cover (fill and crop, photos), contain (whole image on a blurred copy of itself, logos and posters), pad (whole image on a solid colour). " +
+      "Facebook and YouTube cover/banner sizes get cropped differently on different devices: keep the subject and any text centred in the middle third so it survives every crop. " +
+      "Files go to the output folder named after each preset.",
     inputSchema: {
       input_path: z.string().max(500),
       presets: z.array(z.enum(Object.keys(SOCIAL_PRESETS) as [SocialPreset, ...SocialPreset[]])).optional().describe("Default: all"),
@@ -839,6 +857,60 @@ server.registerTool(
       } finally {
         p.done();
       }
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "contact_sheet",
+  {
+    title: "Lay out drafts side by side for comparison",
+    description:
+      `Puts up to ${CONTACT_SHEET_MAX} draft images (for example several directions from image_generate, or a few iterations of the same one) on a single grid, so they can be judged against ` +
+      "each other instead of one at a time. No text is drawn onto the image; the result instead lists which grid position holds which file, in reading order (left to right, top to bottom).",
+    inputSchema: {
+      input_paths: z.array(z.string().max(500)).min(1).max(CONTACT_SHEET_MAX).describe("Draft files, relative to the project"),
+      output_path: z.string().max(500).describe("Where the grid image is saved, e.g. .ai-media/compare/hero-drafts.jpg"),
+      columns: z.number().int().min(1).max(6).optional().describe("Default: a roughly square grid"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const root = realpathSync(cfg.outputRoots[0]);
+      const files = a.input_paths.map((p) => resolveInput(p).file);
+      precheck(a.output_path, a.overwrite);
+      const out = resolveOutput({ roots: cfg.outputRoots, outputPath: a.output_path, provider: "contact-sheet", prompt: "", ext: ".jpg", overwrite: a.overwrite });
+      const p = progress(extra, "contact sheet");
+      try {
+        const r = await contactSheet(files, out, a.columns);
+        return ok({ file: relative(root, out), cols: r.cols, rows: r.rows, width: r.width, height: r.height, tiles: r.tiles.map((t) => ({ index: t.index, file: relative(root, t.file) })) });
+      } finally {
+        p.done();
+      }
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "usage_report",
+  {
+    title: "Local usage summary",
+    description:
+      "Totals up this project's own .ai-media/manifest.jsonl: how many images and videos were generated, by which provider, in what format, and on which days. " +
+      "Nothing is uploaded; this only reads what the server already wrote to disk while saving each result.",
+    inputSchema: {
+      since_days: z.number().int().min(1).max(3650).optional().describe("Only count the last N days. Default: everything on record."),
+    },
+  },
+  async (a) => {
+    try {
+      const root = realpathSync(cfg.outputRoots[0]);
+      return ok(usageReport(readManifest(root), a.since_days));
     } catch (e) {
       return fail(e);
     }

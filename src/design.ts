@@ -337,6 +337,23 @@ export function thirdPartyRule(...texts: (string | undefined)[]): string | undef
 /** Assets where words are part of the design. Everywhere else the model is told to leave text out. */
 const TEXT_ASSETS = new Set<AssetType>(["infographic", "poster", "social-post", "banner"]);
 
+/**
+ * Meta has said plainly that a plain "AI info" disclosure label does not by itself cut a post's reach; what
+ * does get penalised hard is content a platform judges deceptive: a realistic depiction of an event, person
+ * or statement that did not happen. This asks the one honest question that actually protects reach, for the
+ * asset types realistic enough that the question matters (a flat logo or app icon can't be mistaken for a
+ * real photo, so they're excluded).
+ */
+const PLATFORM_HONESTY_CRITIQUE =
+  "Could this be mistaken for a real photo of an event, person or statement that never happened? An honest, clearly composed graphic or illustration is fine either way; a fake that reads as a real moment is the kind of thing platforms cut distribution for.";
+const PHOTOREAL_ASSETS = new Set<AssetType>(["hero", "illustration", "product-shot", "social-post", "banner", "poster", "infographic", "background-video", "product-video"]);
+
+/** A starting point for alt text, not a finished description: the model should replace it once it has actually looked at the result. */
+function altTextSuggestion(asset: AssetType, subject: string, ctx: Context): string {
+  const project = ctx.project ? `${ctx.project}: ` : "";
+  return `${project}${ARTICLE[asset]} of ${subject}. Replace this with what the image actually shows (real colours, objects, any text) once you've looked at it; this is a template, not a description.`;
+}
+
 /** What the project is and why the asset is needed. Models do far better with this story than with keyword lists. */
 export interface Context {
   /** Project or product name. */
@@ -590,6 +607,8 @@ export interface BriefExtra {
   learnedItems?: { criterion: string; average: number; seen: number; advice: string }[];
   /** Built-in lessons that apply to this asset type. */
   lessons?: string[];
+  /** The tier/look that has actually shipped most often for this asset type, from the local journal. Only applied when the caller didn't ask for a specific tier or look. */
+  preferredStyle?: { tier?: string; look?: string; shipped: number };
 }
 
 export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}, extra: BriefExtra = {}) {
@@ -601,9 +620,18 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     else if (persona?.paletteHint) brand = { ...brand, colors: persona.paletteHint };
   }
   const typography = (cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING;
+  const preferred = extra.preferredStyle;
+  const preferredTier = preferred?.tier && preferred.tier in TIER_STYLE ? (preferred.tier as Style["tier"]) : undefined;
+  const preferredLook = preferred?.look && preferred.look in LOOKS ? (preferred.look as Look) : undefined;
   // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
-  const s: Style = { ...style, tier: style.tier ?? persona?.tierHint ?? "premium" };
-  const extraCritique = [TIER_STYLE[s.tier!].critique, ...(persona ? [persona.critique] : [])];
+  // An explicit ask always wins; after that, what has actually shipped before for this asset type; after that, the audience's default.
+  const s: Style = { ...style, tier: style.tier ?? preferredTier ?? persona?.tierHint ?? "premium", look: style.look ?? preferredLook };
+  const preferredApplied = (!style.tier && !!preferredTier) || (!style.look && !!preferredLook);
+  const extraCritique = [
+    TIER_STYLE[s.tier!].critique,
+    ...(persona ? [persona.critique] : []),
+    ...(PHOTOREAL_ASSETS.has(asset) ? [PLATFORM_HONESTY_CRITIQUE] : []),
+  ];
   return {
     asset,
     style: s,
@@ -619,8 +647,10 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
       ]),
     })),
     learned: extra.learnedItems ?? [],
+    preferred_style: preferred ? { ...preferred, applied: preferredApplied } : undefined,
     typography: asset === "logo" ? undefined : { ...typography, note: "Use this pairing for any real wordmark or text you composite afterwards, loaded from its Google Fonts URL, instead of a generic system font." },
     audience_persona: persona ? { id: persona.id, tone: persona.tone } : undefined,
+    alt_text_suggestion: altTextSuggestion(asset, subject, ctx),
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

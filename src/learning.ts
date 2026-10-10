@@ -14,6 +14,9 @@ export interface JournalEntry {
   scores: Record<string, number>;
   average: number;
   verdict: "ship" | "revise";
+  /** The style tier and look passed to design_brief for this draft, when known. Lets the journal remember what actually shipped. */
+  tier?: string;
+  look?: string;
 }
 
 export interface Learned {
@@ -84,4 +87,35 @@ export function learnedFor(journal: JournalEntry[], asset: string): Learned[] {
 export function learnedSentence(l: Learned[]): string | undefined {
   if (!l.length) return undefined;
   return "Earlier results of this kind fell short on " + l.map((x) => `${x.criterion.replace(/-/g, " ")} (${x.advice.replace(/\.$/, "")})`).join("; ") + ". Get these right on the first try.";
+}
+
+export interface PreferredStyle {
+  tier?: string;
+  look?: string;
+  /** How many shipped drafts of this asset type this is based on. */
+  shipped: number;
+}
+
+const PREFERRED_MIN_SAMPLES = 3;
+
+/**
+ * Looks only at drafts that actually shipped (verdict "ship") for this asset type, and finds the tier (and,
+ * within that tier, the look) that shipped most often. Needs a real majority, not just a plurality, so one
+ * lucky result can't set a default: at least half of shipped drafts must share the tier. Returns undefined
+ * until there is enough history to say anything.
+ */
+export function preferredStyleFor(journal: JournalEntry[], asset: string): PreferredStyle | undefined {
+  const shipped = journal.filter((e) => e.asset === asset && e.verdict === "ship" && e.tier);
+  if (shipped.length < PREFERRED_MIN_SAMPLES) return undefined;
+
+  const tierCounts = new Map<string, number>();
+  for (const e of shipped) tierCounts.set(e.tier!, (tierCounts.get(e.tier!) ?? 0) + 1);
+  const [tier, tierCount] = [...tierCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (tierCount < shipped.length / 2) return undefined;
+
+  const lookCounts = new Map<string, number>();
+  for (const e of shipped) if (e.tier === tier && e.look) lookCounts.set(e.look, (lookCounts.get(e.look) ?? 0) + 1);
+  const topLook = [...lookCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  return { tier, look: topLook?.[0], shipped: shipped.length };
 }

@@ -142,6 +142,22 @@ Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISO
 
 Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
 
+## It remembers what actually shipped
+
+`design_audit` can carry the `style` (tier and look) a draft used. Once enough drafts of one asset type have shipped under the same tier, `design_brief` defaults to it on its own next time, instead of always starting from premium. Ask for a specific tier or look and that always wins; this only fills in the gap when you didn't ask.
+
+## It compares drafts side by side
+
+```sh
+contact_sheet(input_paths=["dir1/a.png", "dir1/b.png", "dir1/c.png"], output_path=".ai-media/compare/hero.jpg")
+```
+
+Lays up to 12 images on one grid instead of one at a time. No text is baked into the image; the result lists which grid position holds which file.
+
+## It knows what actually keeps platforms from cutting your reach
+
+Meta has said plainly that a plain "AI info" label does not by itself reduce a post's reach. What does get penalised is content that reads as a real photo of an event, person or statement that never happened. `design_brief`'s critique list now asks that question directly for every realistic asset type, and `social_sizes` covers Facebook, YouTube and X/Twitter cover sizes alongside LinkedIn, Instagram and Pinterest.
+
 ## It falls back when a provider breaks
 
 Browser-driven providers depend on the site's own pages, and a redesign can break a selector overnight. Pass `fallback_providers` to `image_generate` and it tries the next one automatically instead of failing the whole run:
@@ -393,6 +409,9 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Does Facebook or another platform penalise AI-made images?
+Not for being AI-made and disclosed as such; Meta has said that label alone doesn't cut reach. What does get penalised hard is content that reads as a real photo of an event or statement that never happened. design_brief now asks that question for every realistic asset type, and the honest fix is the same as always: make it obviously a graphic or a considered shot, not a faked real moment.
 
 ### What happens if a provider's page changes and a call breaks?
 Pass `fallback_providers` to `image_generate` (for example `["codex", "gemini"]`) and it tries the next one in order. The result reports every attempt and its failure reason. A local, redacted journal also tracks this over time, so a real pattern (the same provider failing the same way repeatedly) gets called out instead of looking like one bad run.

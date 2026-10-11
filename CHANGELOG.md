@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.11.0 (2026-10-11)
+
+- **Several Claude sessions at once, without the "already open" failure.** Every session runs its own copy
+  of this server, and Chrome lets only one of them hold the signed-in profile. Before, the second session
+  just failed. Now it joins a small machine-wide queue and its progress messages say where it is ("number 1
+  in line, waited 13s"), plus an estimate once there's enough history, taken from how long recent browser
+  jobs on this machine actually took (time spent queued is left out of those timings). It carries on by
+  itself when the browser frees up, and a session that finishes hands the browser over within seconds when
+  someone is waiting, instead of keeping it idle for ten minutes.
+- **`share_browser` (opt-in): sessions side by side.** With `no-api-media-mcp config set share_browser true`
+  (or `NOAPI_SHARE_BROWSER=1`), a second session joins the first one's browser as another tab and both jobs
+  run at the same time. It's off by default because it opens a loopback-only devtools port while the
+  browser is open, which any local process could attach to; SECURITY.md says so plainly. A session that
+  joined never closes the browser for the one that launched it.
+- If the profile is held by something that isn't this server (the sign-in window, a leftover Chrome), the
+  wait gives up after about ten seconds with a clear message instead of queueing for twenty minutes.
+- **The brief now asks before it guesses.** `design_brief` returns `needs_from_user` when it doesn't know
+  where the asset will be used (that sets the size and crop) or what post or page it goes with (that sets
+  the message), and the server's instructions tell clients to ask the user those questions once before
+  generating.
+- Tests: 214 pass, plus live runs with two real processes on a throwaway profile and the bundled Chromium:
+  queued handover with share_browser off, true side by side tabs with it on (the joining session closing
+  never killed the other one's tab), and the fast failure when a plain Chrome window holds the profile.
+
+
 ## 0.10.0 (2026-10-10)
 
 - **Two new asset types for 3D and WebGL sites.** `texture`: a seamless, tileable surface for a website

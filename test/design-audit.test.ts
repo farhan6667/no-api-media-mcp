@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { AUDIT_RUBRIC, auditScores, designBrief, domainCues, thirdPartyRule } from "../src/design.js";
+import { AUDIT_RUBRIC, auditScores, designBrief, domainCues, missingContext, thirdPartyRule } from "../src/design.js";
 
 const all = (n: number) => Object.fromEntries(AUDIT_RUBRIC.map((r) => [r.id, n]));
 
@@ -136,5 +136,20 @@ describe("preferred style from the learning journal", () => {
   it("ignores a garbled tier or look name rather than crashing", () => {
     const b = designBrief("hero", "x", {}, {}, {}, { preferredStyle: { tier: "not-a-real-tier", shipped: 4 } });
     assert.equal(b.style.tier, "premium");
+  });
+});
+
+describe("needs_from_user", () => {
+  it("asks where it goes and what it goes with when neither is known", () => {
+    const q = designBrief("hero", "x").needs_from_user!;
+    assert.equal(q.length, 2);
+    assert.match(q[0], /Where will this be used/);
+    assert.match(q[1], /What post, page or story/);
+  });
+  it("asks nothing once usage and the story are given", () => {
+    assert.equal(missingContext({ usage: "a LinkedIn feed post", goal: "explain shadow AI" }), undefined);
+  });
+  it("a target crop counts as knowing where it goes, and project.about as knowing the story", () => {
+    assert.equal(missingContext({ targetAspect: "1200:627", about: "A security tool." }), undefined);
   });
 });

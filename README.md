@@ -142,6 +142,20 @@ Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISO
 
 Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
 
+## It handles several sessions at once
+
+Each Claude (or Cursor, or Codex) session runs its own copy of this server, but there's only one signed-in browser profile. When two sessions want it at the same time, the second one waits in line and says so in its progress messages: its place in the queue, how long it has waited, and an estimate once there's enough history (taken from how long recent jobs on your machine really took). It carries on by itself when the browser frees up.
+
+Want them to run side by side instead? Turn on sharing and a second session opens its own tab in the same browser:
+
+```sh
+no-api-media-mcp config set share_browser true
+```
+
+It's off by default for a reason: sharing opens a loopback-only Chrome devtools port while the browser is open, and any program on your machine could attach to it. Fine on your own computer, not on a shared one.
+
+The brief also asks before it guesses now: if it doesn't know where an image will be used or what post it goes with, `design_brief` returns `needs_from_user` with those questions, so your assistant asks you once instead of producing the wrong size or the wrong message.
+
 ## It knows 3D and WebGL sites need different assets
 
 Two more asset types for `design_brief`: `texture` (a seamless, tileable surface for a background or a Three.js material) and `environment-map` (a seamless 2:1 equirectangular panorama for reflections and lighting in a Three.js or WebGL scene). Each gets its own critique checklist instead of the usual photo-realism one, since neither is meant to be looked at directly.
@@ -411,7 +425,7 @@ Put a file in `~/.no-api-media/providers/<id>.json`. Start from [`examples/provi
 Install this MCP server, then sign in once to ChatGPT, Google (Flow and Gemini), Higgsfield or Grok in the browser window it opens. After that you can ask Claude Code, Cursor or Codex for an image or a video and it uses the plan you already pay for.
 
 ### Does it see my password?
-No. You type your password yourself in a normal browser window. The server never asks for it, types it or stores it, and it drives the browser over a pipe, not an open network port.
+No. You type your password yourself in a normal browser window. The server never asks for it, types it or stores it, and by default it drives the browser over a pipe, not an open network port (the opt-in `share_browser` setting is the one exception, see below).
 
 ### Can it bill my API account by accident?
 It is built to prevent that. API key variables are removed from every child process, and Codex only runs when its login status shows a ChatGPT login.
@@ -427,6 +441,9 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### I run several Claude sessions. Why did one say the browser is busy?
+Only one copy of the server can use the signed-in browser profile at a time. The waiting session queues, reports its place and an estimate, and continues on its own. Turn on `share_browser` to let sessions work side by side as separate tabs, knowing it opens a local devtools port while the browser is open.
 
 ### Can it make assets for a three.js or WebGL site?
 Yes: `design_brief` has an `environment-map` asset type (a seamless 2:1 panorama for reflections and lighting) and a `texture` asset type (a seamless tileable surface), on top of the usual hero and background-video. Both get checked for seams instead of photo-realism.

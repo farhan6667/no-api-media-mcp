@@ -21,6 +21,8 @@ export interface ProviderEvent {
   cls?: FailureClass;
   /** Redacted, truncated. Only set when ok is false. */
   note?: string;
+  /** How long the call took, when it was measured. Used to estimate queue waits from real history. */
+  durationMs?: number;
 }
 
 const MAX_BYTES = 150_000;
@@ -42,11 +44,17 @@ export function classifyFailure(message: string): FailureClass {
   return "other";
 }
 
-export function recordProviderOutcome(home: string, provider: string, ok: boolean, cls?: FailureClass, message?: string, now = Date.now()) {
+export function recordProviderOutcome(home: string, provider: string, ok: boolean, cls?: FailureClass, message?: string, now = Date.now(), durationMs?: number) {
   try {
     const f = reliabilityPath(home);
     mkdirSync(dirname(f), { recursive: true });
-    const entry: ProviderEvent = { time: new Date(now).toISOString(), provider, ok, ...(ok ? {} : { cls, note: message ? redact(message).slice(0, 300) : undefined }) };
+    const entry: ProviderEvent = {
+      time: new Date(now).toISOString(),
+      provider,
+      ok,
+      ...(ok ? {} : { cls, note: message ? redact(message).slice(0, 300) : undefined }),
+      ...(durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0 ? { durationMs: Math.round(durationMs) } : {}),
+    };
     appendFileSync(f, JSON.stringify(entry) + "\n");
     if (statSync(f).size > MAX_BYTES) {
       const lines = readFileSync(f, "utf8").split("\n").filter(Boolean);
@@ -100,4 +108,22 @@ export function providerHealth(events: ProviderEvent[], provider: string): Healt
       ? `${provider} has failed its last ${streak} calls in a row (${streakClass}). This looks like a real problem, not a one-off; a site redesign can break a selector like this.`
       : undefined;
   return { provider, recent: recent.length, failures, streak, streakClass, note };
+}
+
+/** Providers that don't use the shared browser, so their timings say nothing about a browser queue. */
+const NON_BROWSER = new Set(["codex", "higgsfield"]);
+
+/**
+ * Median duration of recent successful browser jobs, or undefined with fewer than three samples. This is
+ * what a queue wait is estimated from: real history on this machine, not a guess.
+ */
+export function typicalBrowserJobMs(events: ProviderEvent[], window = 20): number | undefined {
+  const d = events
+    .filter((e) => e.ok && !NON_BROWSER.has(e.provider) && typeof e.durationMs === "number")
+    .slice(-window)
+    .map((e) => e.durationMs!)
+    .sort((a, b) => a - b);
+  if (d.length < 3) return undefined;
+  const mid = Math.floor(d.length / 2);
+  return d.length % 2 ? d[mid] : Math.round((d[mid - 1]! + d[mid]!) / 2);
 }

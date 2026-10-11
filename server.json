@@ -7,13 +7,13 @@
     "url": "https://github.com/farhan6667/no-api-media-mcp",
     "source": "github"
   },
-  "version": "0.10.0",
+  "version": "0.11.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "no-api-media-mcp",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "transport": {
         "type": "stdio"
       },
@@ -45,6 +45,12 @@
         {
           "name": "NOAPI_CHROME",
           "description": "Path to Google Chrome if not auto-detected",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_SHARE_BROWSER",
+          "description": "Set to 1 to let several sessions use the signed-in browser as separate tabs at once (opens a loopback-only devtools port while it is open). Default off: a second session waits in a queue.",
           "isRequired": false,
           "isSecret": false
         },

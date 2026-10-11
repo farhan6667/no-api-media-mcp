@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { classifyFailure, providerHealth, readReliability, recordProviderOutcome, reliabilityPath } from "../src/reliability.js";
+import { classifyFailure, providerHealth, readReliability, recordProviderOutcome, reliabilityPath, typicalBrowserJobMs } from "../src/reliability.js";
 
 const home = mkdtempSync(join(tmpdir(), "noapi-reliability-"));
 after(() => rmSync(home, { recursive: true, force: true }));
@@ -80,5 +80,20 @@ describe("providerHealth", () => {
   it("only looks at the named provider's own events", () => {
     const events = [ev("flow", false, "selector"), ev("codex", false, "selector"), ev("codex", false, "selector")];
     assert.equal(providerHealth(events, "flow").streak, 1);
+  });
+});
+
+describe("typicalBrowserJobMs", () => {
+  const ev = (provider: string, ok: boolean, durationMs?: number) => ({ time: new Date().toISOString(), provider, ok, durationMs });
+  it("needs at least three timed successes", () => {
+    assert.equal(typicalBrowserJobMs([ev("flow", true, 1000), ev("flow", true, 2000)]), undefined);
+  });
+  it("takes the median of browser jobs and ignores codex, failures and untimed calls", () => {
+    const events = [ev("flow", true, 30_000), ev("codex", true, 999_000), ev("chatgpt", true, 60_000), ev("flow", false, 5), ev("gemini", true), ev("gemini", true, 90_000)];
+    assert.equal(typicalBrowserJobMs(events), 60_000);
+  });
+  it("records a duration when one is given", () => {
+    recordProviderOutcome(home, "flow", true, undefined, undefined, Date.now(), 4321.6);
+    assert.equal(readReliability(home).at(-1)!.durationMs, 4322);
   });
 });

@@ -384,6 +384,22 @@ const PLATFORM_HONESTY_CRITIQUE =
   "Could this be mistaken for a real photo of an event, person or statement that never happened? An honest, clearly composed graphic or illustration is fine either way; a fake that reads as a real moment is the kind of thing platforms cut distribution for.";
 const PHOTOREAL_ASSETS = new Set<AssetType>(["hero", "illustration", "product-shot", "social-post", "banner", "poster", "infographic", "background-video", "product-video"]);
 
+/**
+ * The two things a brief can't guess well: where the asset will be used (that sets size, aspect and crop)
+ * and what it goes with (that sets the message). When either is missing the brief says so, so the client
+ * asks the user once instead of generating from a guess.
+ */
+export function missingContext(ctx: Context): string[] | undefined {
+  const q: string[] = [];
+  if (!ctx.usage && !ctx.targetAspect) {
+    q.push("Where will this be used, which platform and which spot (a LinkedIn feed post, a GitHub README header, a website hero)? That decides the size and the crop.");
+  }
+  if (!ctx.goal && !ctx.about) {
+    q.push("What post, page or story does it go with, and what should people feel or do when they see it? That decides the message.");
+  }
+  return q.length ? q : undefined;
+}
+
 /** A starting point for alt text, not a finished description: the model should replace it once it has actually looked at the result. */
 function altTextSuggestion(asset: AssetType, subject: string, ctx: Context): string {
   const project = ctx.project ? `${ctx.project}: ` : "";
@@ -691,6 +707,7 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     typography: asset === "logo" ? undefined : { ...typography, note: "Use this pairing for any real wordmark or text you composite afterwards, loaded from its Google Fonts URL, instead of a generic system font." },
     audience_persona: persona ? { id: persona.id, tone: persona.tone } : undefined,
     alt_text_suggestion: altTextSuggestion(asset, subject, ctx),
+    needs_from_user: missingContext(ctx),
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

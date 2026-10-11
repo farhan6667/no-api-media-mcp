@@ -60,7 +60,7 @@ if (process.argv[2] === "login") {
 }
 if (process.argv[2] === "config") {
   const [, , , action, key, value] = process.argv;
-  const KEYS = ["strip_ai_metadata", "auto_cleanup"];
+  const KEYS = ["strip_ai_metadata", "auto_cleanup", "share_browser"];
   if (action === "set") {
     if (!KEYS.includes(key ?? "")) {
       process.stderr.write(`Unknown key "${key}". Keys: ${KEYS.join(", ")}\n`);
@@ -77,7 +77,7 @@ if (process.argv[2] === "config") {
     const env = process.env.NO_API_MEDIA_KEEP_METADATA ?? process.env.NOAPI_KEEP_METADATA;
     const file = readConfigFile(cfg.home);
     const source = env !== undefined ? `environment (NO_API_MEDIA_KEEP_METADATA=${env})` : file.strip_ai_metadata !== undefined ? "config.json" : "default";
-    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nauto_cleanup = ${cfg.autoCleanup}   (old rejected and used drafts in .ai-media are removed after a grace period; NOAPI_AUTO_CLEANUP=0 turns it off)\nconfig file: ${join(cfg.home, "config.json")}\n`);
+    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nauto_cleanup = ${cfg.autoCleanup}   (old rejected and used drafts in .ai-media are removed after a grace period; NOAPI_AUTO_CLEANUP=0 turns it off)\nshare_browser = ${cfg.shareBrowser}   (true: several sessions use the signed-in browser as separate tabs at once, through a loopback-only devtools port; false: a second session waits in a queue)\nconfig file: ${join(cfg.home, "config.json")}\n`);
   }
   process.exit(0);
 }
@@ -144,7 +144,8 @@ Any of these can combine (a GitHub repo for a three.js site needs both the repo 
 
 When the user asks for any image or video for their project, do this without asking them to write prompts:
 1. Call project_profile. Open the reference images it lists to see the current look.
-2. Decide the slots yourself: where the asset goes (hero, OG image, feature icons, background video...), size, file path in the project's asset folder.
+2. Before generating anything, make sure you know two things: where it will be used (which platform and which spot, so the size and aspect are right instead of guessed) and what it goes with (the post, page or story, so the image carries the same message). If the conversation or the project already answers both, go ahead. If not, ask the user one short question covering both, then continue: one question costs seconds, a wrong guess costs a whole round. When design_brief returns needs_from_user, those are the questions to ask.
+   Then decide the slots: where the asset goes (hero, OG image, feature icons, background video...), size, file path in the project's asset folder. Put the answers in context.usage, context.goal and context.targetAspect.
 3. Call design_brief like a creative director briefing a designer: asset type, subject, brand colours, style tier, and a full "context" (project name, what it does from project_profile.about, WHO sees it in context.audience, where it goes, what it must achieve, and exactText for any words). Quality defaults to premium. If the user named a level ("premium", "glowing", "minimal", "luxury 3D"), that wins.
    Say who actually looks at this in context.audience (a CISO, developers, the open source community, security analysts, the general public). design_brief recognises a few real audiences and changes tone, default tier and palette for them, and the brief tells you which one it matched. Don't invent an audience it doesn't have: a wrong or made-up one is worse than leaving it unset.
 4. Generate the brief's directions with image_generate. Designs with words (infographic, poster, logo with wordmark) go to "codex" first (GPT Image renders text best), then "flow". Photo and 3D scenes go to "flow" (Nano Banana 2, 0 credits on AI Pro). Save drafts into .ai-media (no output_path).
@@ -161,6 +162,7 @@ When the user asks for any image or video for their project, do this without ask
 8. Comparing several directions or iterations before picking one? Call contact_sheet to lay them on one grid instead of opening each file alone. Curious what's actually been generated in a project over time? usage_report totals the local manifest by provider, type and day, no uploads.
    Want the site's CSS variables to actually match a generated hero or banner instead of guessing? Run palette_extract on the chosen file and wire its colours into the stylesheet; it names them by how dominant they are, not by a guessed role, so pick which one is the primary or the accent yourself.
    For a texture or environment-map, verify the tile or the seam for real before using it: contact_sheet with four copies of a texture shows a repeat at a glance, and the 2:1 wrap on an environment-map should be checked by eye at the left-right edge.
+Several sessions at once: the signed-in browser can only be used by one copy of this server at a time unless share_browser is on. A job that has to wait says so in its progress messages (its place in line, and an estimate once there's history) and carries on by itself when the browser frees up, so tell the user it's queued rather than retrying. With share_browser on (no-api-media-mcp config set share_browser true), sessions run side by side as separate tabs.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
 const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
@@ -212,17 +214,19 @@ function progress(extra: Extra, label: string) {
   beat.unref();
   return {
     onTick: (_ms: number) => undefined,
+    /** A free-text status line, e.g. for a browser join/queue wait while another session has it open. */
+    status: send,
     done: () => clearInterval(beat),
   };
 }
 
 /** Run a generation job: one at a time, with progress, cancellation and the heartbeat cleaned up. */
-function job<T>(extra: Extra, key: string, label: string, fn: (onTick: (ms: number) => void) => Promise<T>, g: JobGate = gate) {
+function job<T>(extra: Extra, key: string, label: string, fn: (onTick: (ms: number) => void, status: (msg: string) => void) => Promise<T>, g: JobGate = gate) {
   const p = progress(extra, label);
   return g
     .run(key, async () => {
       if (extra.signal.aborted) throw new Error("Cancelled");
-      return fn(p.onTick);
+      return fn(p.onTick, p.status);
     })
     .finally(p.done);
 }
@@ -572,7 +576,7 @@ server.registerTool(
     }
 
     /** One provider's actual image call. Returns the plain result data; throws on failure. Unchanged from before the fallback chain was added. */
-    async function attemptImage(provider: string, onTick: (ms: number) => void): Promise<Record<string, unknown>> {
+    async function attemptImage(provider: string, onTick: (ms: number) => void, status: (msg: string) => void): Promise<Record<string, unknown>> {
       if (provider === "codex") {
         const r = await codexImage(a.prompt, a.aspect, extra.signal);
         return { saved: [save(r.data, "codex", a.prompt, a.output_path, a.overwrite)], via: r.note };
@@ -584,7 +588,7 @@ server.registerTool(
         for (const [i, u] of r.urls.entries()) saved.push(save(await downloadHttps(u, extra.signal), "higgsfield", a.prompt, numbered(a.output_path, i), a.overwrite));
         return { saved, credits: r.credits, via: "Higgsfield CLI" };
       }
-      const page = await browser.page(extra.signal);
+      const page = await browser.page(extra.signal, status);
       try {
         if (provider === "chatgpt") {
           try {
@@ -623,14 +627,17 @@ server.registerTool(
       }
     }
 
-    return job(extra, a.provider, `${a.provider} image`, async (onTick) => {
+    return job(extra, a.provider, `${a.provider} image`, async (onTick, status) => {
       const candidates = [a.provider, ...(a.fallback_providers ?? [])];
       const tried: { provider: string; ok: boolean; reason?: string }[] = [];
       let lastError: Error | undefined;
       for (const provider of candidates) {
+        const startedAt = Date.now();
+        browser.lastWaitMs = 0;
         try {
-          const result = await attemptImage(provider, onTick);
-          recordProviderOutcome(cfg.home, provider, true);
+          const result = await attemptImage(provider, onTick, status);
+          // Time spent queued behind another session isn't part of how long the job itself takes.
+          recordProviderOutcome(cfg.home, provider, true, undefined, undefined, Date.now(), Date.now() - startedAt - browser.lastWaitMs);
           return ok(tried.length ? { ...result, fallback_used: { attempted: [...tried, { provider, ok: true }] } } : result);
         } catch (e) {
           const message = (e as Error).message ?? String(e);
@@ -664,14 +671,14 @@ server.registerTool(
     },
   },
   async (a, extra: Extra) =>
-    job(extra, "quote", `${a.provider} quote`, async () => {
+    job(extra, "quote", `${a.provider} quote`, async (_onTick, status) => {
       if (a.provider === "higgsfield") {
         const model = a.model === "veo-lite" ? "seedance_2_0" : a.model;
         const credits = await higgsfieldCost(model, a.prompt ?? "test", { aspect_ratio: a.aspect });
         return ok({ provider: "higgsfield", model, credits, balance: (await higgsfieldStatus()).credits });
       }
       if (!FLOW_VIDEO.includes(a.model)) throw new Error(`Flow video models: ${FLOW_VIDEO.join(", ")}`);
-      const page = await browser.page(extra.signal);
+      const page = await browser.page(extra.signal, status);
       try {
         const q = await flowQuote(page, { email: cfg.googleEmail, model: a.model as FlowModel, aspect: a.aspect, count: a.count as 1, project: readState(cfg).flowProject });
         writeState(cfg, { flowProject: q.project });
@@ -711,14 +718,14 @@ server.registerTool(
     } catch (e) {
       return fail(e);
     }
-    return job(extra, a.provider, `${a.provider} video`, async (onTick) => {
+    return job(extra, a.provider, `${a.provider} video`, async (onTick, status) => {
       if (a.provider === "higgsfield") {
         if (a.max_credits < 1) throw new Error("Higgsfield videos spend credits. Call video_quote with provider higgsfield, tell the user, then pass max_credits.");
         const model = a.model === "veo-lite" ? "seedance_2_0" : a.model;
         const r = await higgsfieldGenerate(model, a.prompt, { aspect_ratio: a.aspect, duration: a.duration }, a.max_credits, extra.signal);
         return ok({ saved: [save(await downloadHttps(r.urls[0], extra.signal), "higgsfield", a.prompt, a.output_path, a.overwrite)], credits: r.credits, model });
       }
-      const page = await browser.page(extra.signal);
+      const page = await browser.page(extra.signal, status);
       try {
         if (a.provider !== "flow") {
           const spec = specs.specs.find((s) => s.id === a.provider)!;

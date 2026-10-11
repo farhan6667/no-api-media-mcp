@@ -21,6 +21,12 @@
 
 <p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/workflow.webp" width="100%" alt="Overview: your AI assistant (Claude Code, Cursor, Codex, Windsurf or any MCP client) talks to no-api-media-mcp, which uses the AI plans you already pay for (ChatGPT via Codex, Google Flow, Gemini, Higgsfield, Grok) and puts finished, checked media in your project"></p>
 
+## Watch the 72 second intro
+
+<p align="center"><a href="https://github.com/farhan6667/no-api-media-mcp/blob/main/docs/video/no-api-media-mcp-intro.mp4"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/intro-poster.webp" width="720" alt="Intro video for no-api-media-mcp: why pay again for an API key when you already pay for ChatGPT or Google AI Pro, how the server makes images and videos from Claude Code, Cursor and Codex, and the quick start. Click to play."></a></p>
+
+A short narrated tour: the problem it solves, the server making a real image from a prompt, and how to install it. The video itself was made with our own intro video tool and its synthetic NexaForge narrator.
+
 ## Behaviour notice: metadata is stripped from optimized files
 
 Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes: EXIF, XMP, text chunks and **C2PA content credentials** (the signed manifest that ChatGPT, Codex, Google Flow, Gemini and Veo embed, and that platforms such as LinkedIn turn into a "Content credentials" badge). This is what most web image optimizers and CDNs do, and in fact 0.2 already dropped it as a silent side effect of re-encoding. 0.3 makes it explicit: every result lists what was removed, and you can turn it off.

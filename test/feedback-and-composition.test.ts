@@ -339,3 +339,24 @@ describe("compose placement", () => {
     assert.doesNotMatch(html, /text-shadow/);
   });
 });
+
+describe("closing the browser at the right time", () => {
+  it("the idle safety net defaults to 20 minutes and can be set or turned off", async () => {
+    const { resolveIdleMinutes } = await import("../src/config.js");
+    assert.equal(resolveIdleMinutes({}, {}), 20);
+    assert.equal(resolveIdleMinutes({ browser_idle_minutes: 5 }, {}), 5);
+    assert.equal(resolveIdleMinutes({}, { NOAPI_BROWSER_IDLE_MINUTES: "0" }), 0);
+    assert.equal(resolveIdleMinutes({ browser_idle_minutes: "nope" }, {}), 20);
+    assert.equal(resolveIdleMinutes({ browser_idle_minutes: 9999 }, {}), 240);
+  });
+  it("never closes while this session or another session still has tabs working", () => {
+    const src = readFileSync(join(import.meta.dirname, "..", "..", "src", "browser.ts"), "utf8");
+    assert.match(src, /if \(this\.open > 0\) return `Left open/);
+    assert.match(src, /if \(\(await this\.otherSessionTabs\(\)\) > 0\)/);
+    assert.match(src, /\/json\/list/);
+  });
+  it("the instructions only allow browser_done once the work is final", () => {
+    const src = readFileSync(join(import.meta.dirname, "..", "..", "src", "index.ts"), "utf8");
+    assert.match(src, /call browser_done so the browser window doesn't stay open\. Never call it between rounds of edits/);
+  });
+});

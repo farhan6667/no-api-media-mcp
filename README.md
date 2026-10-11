@@ -456,6 +456,20 @@ It is built to prevent that. API key variables are removed from every child proc
 ### Which clients and providers does it work with?
 Any MCP client, including Claude Code, Cursor, Codex and Windsurf. Providers are ChatGPT through Codex, Google Flow (Veo and Nano Banana), Gemini, Higgsfield and Grok, plus any other site you describe in a JSON file.
 
+### Which assistant model should I use?
+The images themselves come from your provider's image model (GPT Image through Codex or ChatGPT, Nano Banana through Flow or Gemini), so picking a different assistant model doesn't change the picture directly. It does change the result: your assistant writes the brief, looks at every draft and scores it honestly, and sets the final text and logo. Use a current top-tier model with good image understanding and tool use; small, fast models tend to skip steps or pass weak drafts. For designs with words, `codex` renders text best; for photo and 3D scenes, Flow.
+
+### What do I need to install to use it?
+An MCP client to talk to it, plus whatever sign-in the providers you want need.
+
+- **Claude Code**: in the terminal, the desktop app, or the [Claude Code extension for VS Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). See [claude.com/claude-code](https://claude.com/claude-code). Cursor and Windsurf work too.
+- **Codex as your assistant** (optional): the [Codex IDE extension](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) for VS Code, Cursor and Windsurf ([docs](https://developers.openai.com/codex/ide)), or the [Codex CLI](https://github.com/openai/codex).
+- **For the `codex` image provider** you need the [Codex CLI](https://github.com/openai/codex) itself, installed with `npm i -g @openai/codex` and signed in with `codex login` using your ChatGPT plan (not an API key). The server calls the CLI, so the editor extension alone isn't enough for this provider.
+- **For Flow, Gemini and ChatGPT on the web**, Google Chrome, and a one-time sign-in in the window `accounts_login` opens.
+
+### Does it leave browser windows open?
+No. Each job's tab closes when the job ends, and the window itself closes when your assistant calls `browser_done` at the end of the work. If that never happens, a safety net closes it after 20 idle minutes (`no-api-media-mcp config set browser_idle_minutes` changes that). While the work is still going, between rounds of edits, it deliberately stays open so the next step doesn't have to start the browser again.
+
 ### Does it remove AI watermarks?
 No. `media_optimize` strips embedded metadata (EXIF, XMP and C2PA content credentials) from the files it writes, by default and with a report, and you can switch that off. It never touches invisible watermarks such as SynthID.
 

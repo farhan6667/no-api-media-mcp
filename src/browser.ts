@@ -30,6 +30,9 @@ import { assertPublicHttps, log } from "./safety.js";
  *   but the other browser can't be joined.
  */
 const QUEUE_POLL_MS = 2500;
+const STATUS_PAGE =
+  '<!doctype html><meta charset="utf-8"><title>no-api-media</title><body style="margin:0;display:grid;place-items:center;height:100vh;background:#0b1020;color:#c9d6e3;font:16px system-ui,sans-serif">' +
+  '<p style="max-width:34em;text-align:center;line-height:1.5">no-api-media keeps this window open while your images are being made. It closes on its own when the work is finished.</p></body>';
 const STATUS_EVERY_MS = 10_000;
 const QUEUE_MAX_MS = 20 * 60_000;
 
@@ -42,6 +45,7 @@ export class Browser {
   private open = 0;
   /** Time the last page() call spent waiting for another session, so job timings can leave it out. */
   lastWaitMs = 0;
+
 
   constructor(private cfg: Config) {
     mkdirSync(cfg.profileDir, { recursive: true });
@@ -115,6 +119,9 @@ export class Browser {
     });
     this.isHost = true;
     markHost(this.cfg.home);
+    // Chrome quits when its last tab closes, so the tab it opens on launch stays: it keeps the browser alive
+    // between rounds of edits. It shows a short note instead of a blank page, so the window explains itself.
+    for (const pg of ctx.pages()) void pg.setContent(STATUS_PAGE).catch(() => undefined);
     return ctx;
   }
 
@@ -201,14 +208,66 @@ export class Browser {
    * session that actually launched the browser is allowed to shut it down; a session that joined over
    * CDP just disconnects, leaving the browser running for whoever launched it (and anyone else sharing it).
    */
+  /**
+   * Tabs other sessions have open in this same browser (only possible with share_browser). Read from the
+   * browser's own loopback target list, minus the tabs this session holds.
+   */
+  private async otherSessionTabs(): Promise<number> {
+    if (!this.cfg.shareBrowser) return 0;
+    const ep = this.devtoolsEndpoint();
+    if (!ep) return 0;
+    try {
+      const res = await fetch(`http://127.0.0.1:${ep.port}/json/list`, { signal: AbortSignal.timeout(2000) });
+      const list = (await res.json()) as { type?: string; url?: string }[];
+      const real = list.filter((t) => t.type === "page" && t.url && !t.url.startsWith("about:blank") && !t.url.startsWith("devtools://")).length;
+      return Math.max(0, real - this.open);
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Close (or, for a session that joined, disconnect), but never while another session still has tabs in it. */
+  private async closeWhenFree(): Promise<"closed" | "disconnected" | "kept for other sessions"> {
+    if (!this.isHost) {
+      await this.disconnect();
+      return "disconnected";
+    }
+    if ((await this.otherSessionTabs()) > 0) {
+      // Try again shortly; the last session to finish is the one that actually closes it.
+      clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(() => void this.closeWhenFree(), 15_000);
+      this.idleTimer.unref();
+      return "kept for other sessions";
+    }
+    await this.close();
+    return "closed";
+  }
+
+  /**
+   * The end of the work: the final asset is in the project and nothing is left to change. Closes this
+   * session's browser now instead of waiting for the idle safety net. Tabs of other sessions are left alone.
+   */
+  async finish(): Promise<string> {
+    if (!this.ctx) return "No browser was open for this session.";
+    if (this.open > 0) return `Left open: this session still has ${this.open} tab(s) working. Call browser_done again when they finish.`;
+    const r = await this.closeWhenFree();
+    return r === "kept for other sessions"
+      ? "Other sessions still have tabs in this browser, so it stays open; it closes on its own once they're done."
+      : r === "closed"
+        ? "Browser closed."
+        : "This session's tabs are done and it let go of the shared browser.";
+  }
+
   private armIdle() {
     clearTimeout(this.idleTimer);
     clearInterval(this.yieldTimer);
     if (this.open > 0) return;
-    this.idleTimer = setTimeout(() => void (this.isHost ? this.close() : this.disconnect()), 10 * 60_000);
-    this.idleTimer.unref();
+    if (this.cfg.browserIdleMinutes > 0) {
+      this.idleTimer = setTimeout(() => void this.closeWhenFree(), this.cfg.browserIdleMinutes * 60_000);
+      this.idleTimer.unref();
+    }
     // Without sharing, another session can only get the browser once we let go of it. So when we're
-    // idle and somebody is waiting in the queue, hand it over now instead of after the 10 minutes.
+    // idle and somebody is waiting in the queue, hand it over now instead of after the idle timeout.
     if (this.isHost && !this.cfg.shareBrowser) {
       this.yieldTimer = setInterval(() => {
         if (this.open === 0 && waiting(this.cfg.home) > 0) void this.close();

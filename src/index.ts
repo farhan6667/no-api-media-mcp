@@ -66,11 +66,21 @@ if (process.argv[2] === "login") {
 }
 if (process.argv[2] === "config") {
   const [, , , action, key, value] = process.argv;
-  const KEYS = ["strip_ai_metadata", "auto_cleanup", "share_browser"];
+  const KEYS = ["strip_ai_metadata", "auto_cleanup", "share_browser", "browser_idle_minutes"];
   if (action === "set") {
     if (!KEYS.includes(key ?? "")) {
       process.stderr.write(`Unknown key "${key}". Keys: ${KEYS.join(", ")}\n`);
       process.exit(2);
+    }
+    if (key === "browser_idle_minutes") {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0 || n > 240) {
+        process.stderr.write(`browser_idle_minutes must be a whole number from 0 to 240, got "${value}"\n`);
+        process.exit(2);
+      }
+      writeConfigFile(cfg.home, { browser_idle_minutes: n });
+      process.stdout.write(`browser_idle_minutes = ${n}${n === 0 ? " (no safety net: the browser closes only on browser_done)" : ""}\n`);
+      process.exit(0);
     }
     const v = (value ?? "").toLowerCase();
     if (v !== "true" && v !== "false") {
@@ -83,7 +93,7 @@ if (process.argv[2] === "config") {
     const env = process.env.NO_API_MEDIA_KEEP_METADATA ?? process.env.NOAPI_KEEP_METADATA;
     const file = readConfigFile(cfg.home);
     const source = env !== undefined ? `environment (NO_API_MEDIA_KEEP_METADATA=${env})` : file.strip_ai_metadata !== undefined ? "config.json" : "default";
-    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nauto_cleanup = ${cfg.autoCleanup}   (old rejected and used drafts in .ai-media are removed after a grace period; NOAPI_AUTO_CLEANUP=0 turns it off)\nshare_browser = ${cfg.shareBrowser}   (true: several sessions use the signed-in browser as separate tabs at once, through a loopback-only devtools port; false: a second session waits in a queue)\nconfig file: ${join(cfg.home, "config.json")}\n`);
+    process.stdout.write(`strip_ai_metadata = ${cfg.stripAiMetadata}   (from ${source})\nauto_cleanup = ${cfg.autoCleanup}   (old rejected and used drafts in .ai-media are removed after a grace period; NOAPI_AUTO_CLEANUP=0 turns it off)\nshare_browser = ${cfg.shareBrowser}   (true: several sessions use the signed-in browser as separate tabs at once, through a loopback-only devtools port; false: a second session waits in a queue)\nbrowser_idle_minutes = ${cfg.browserIdleMinutes}   (safety net if browser_done is never called; 0 = off)\nconfig file: ${join(cfg.home, "config.json")}\n`);
   }
   process.exit(0);
 }
@@ -169,6 +179,7 @@ When the user asks for any image or video for their project, do this without ask
    Want the site's CSS variables to actually match a generated hero or banner instead of guessing? Run palette_extract on the chosen file and wire its colours into the stylesheet; it names them by how dominant they are, not by a guessed role, so pick which one is the primary or the accent yourself.
    For a texture or environment-map, verify the tile or the seam for real before using it: contact_sheet with four copies of a texture shows a repeat at a glance, and the 2:1 wrap on an environment-map should be checked by eye at the left-right edge.
 When the user criticises a result (a colour, a crop, an empty band, how the text looks, the wrong logo), call design_feedback straight away with what was wrong and what they want instead, so it's never repeated. design_brief brings these back: follow its user_feedback in the prompt and its compositing_rules when you set text and logos.
+When everything is finished (the final asset is in the project, checked, and the user has no more changes), call browser_done so the browser window doesn't stay open. Never call it between rounds of edits.
 Set text and logos with compose (pass brand_id from brand_profiles, so the right mark goes on: a person's own posts get their personal mark, company posts the company mark) rather than writing your own HTML, then finish with deliver for the platform (linkedin-feed, x-post, github-social and so on) instead of hand-tuning size and quality.
 Run composition_check on drafts and on the final file: an empty band at an edge gets cropped, or the headline goes into it on purpose. Pass context.overlayText to design_brief only when you will really set words on top; otherwise it asks the model for a full frame.
 Several sessions at once: with share_browser on (the default) each session gets its own tab in the same signed-in browser and jobs run side by side. If sharing is off, or the other browser can't be joined, a job waits in a queue and says so in its progress messages (its place in line, and an estimate once there's history), then carries on by itself, so tell the user it's queued rather than retrying.
@@ -1305,6 +1316,25 @@ server.registerTool(
           await page.close().catch(() => undefined);
         }
       });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "browser_done",
+  {
+    title: "Close the browser when the work is finished",
+    description:
+      "Call this only at the very end: the final asset is in the project (optimized or delivered, wired in where it belongs), you've checked it, and the user has nothing left to change. " +
+      "It closes this session's browser instead of leaving the window open until the idle safety net. Tabs other sessions have open in a shared browser are never closed; " +
+      "the browser then closes on its own once they finish. Don't call it between rounds of edits: reopening costs a few seconds, but closing mid-work makes the next step start over.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      return ok({ result: await browser.finish() });
     } catch (e) {
       return fail(e);
     }

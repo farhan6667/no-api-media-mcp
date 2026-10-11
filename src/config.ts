@@ -48,6 +48,11 @@ export interface Config {
    * it off on a shared machine. Off means a second session waits in a queue instead.
    */
   shareBrowser: boolean;
+  /**
+   * Safety net only: close the automated browser after this many idle minutes if browser_done was never
+   * called. The normal path is browser_done at the end of the work. 0 turns the safety net off.
+   */
+  browserIdleMinutes: number;
   /** Check GitHub for a newer release. Default true. Off via NOAPI_CHECK_UPDATES=0. */
   checkUpdates: boolean;
   /** Run `npm install -g` for a newer version once found. Default false: notify only. On via NOAPI_AUTO_UPDATE=1. */
@@ -105,6 +110,13 @@ export function resolveShareBrowser(saved: Record<string, unknown>, environment:
   if (typeof v === "boolean") return v;
   if (typeof v === "string") return v.toLowerCase() !== "false";
   return true;
+}
+
+/** Precedence: environment NOAPI_BROWSER_IDLE_MINUTES, then config.json browser_idle_minutes, then 20. */
+export function resolveIdleMinutes(saved: Record<string, unknown>, environment: NodeJS.ProcessEnv = process.env): number {
+  const raw = environment.NOAPI_BROWSER_IDLE_MINUTES ?? saved.browser_idle_minutes;
+  const n = Number(raw);
+  return raw !== undefined && raw !== "" && Number.isFinite(n) && n >= 0 ? Math.min(240, Math.floor(n)) : 20;
 }
 
 function flag(name: string, def: boolean): boolean {
@@ -210,6 +222,7 @@ export function loadConfig(): Config {
     stripAiMetadata: resolveStrip(saved),
     autoCleanup: resolveAutoCleanup(saved),
     shareBrowser: resolveShareBrowser(saved),
+    browserIdleMinutes: resolveIdleMinutes(saved),
     checkUpdates: flag("CHECK_UPDATES", true),
     autoUpdate: flag("AUTO_UPDATE", false),
     updateCheckIntervalHours: Number(env("UPDATE_CHECK_HOURS") ?? 24) || 24,

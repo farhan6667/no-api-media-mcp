@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.0 (2026-10-11)
+
+- **The browser closes when the work is done, not before.** New `browser_done` tool: the assistant calls
+  it at the very end, once the final asset is in the project, checked, and you have nothing left to
+  change. It closes this session's browser right then instead of leaving the window open. The server's
+  instructions tell clients never to call it between rounds of edits.
+- **It never closes on another session.** With browser sharing on, a session that finishes leaves the
+  browser open while other sessions still have tabs in it, and the last one to finish closes it. Checked
+  live with two processes: the first session finished mid-way through the second one's job, the second
+  job carried on, and the browser closed on its own afterwards.
+- **A safety net, now set by you.** If `browser_done` is never called, the browser closes after
+  `browser_idle_minutes` idle (default 20, `0` turns the safety net off):
+  `no-api-media-mcp config set browser_idle_minutes 10`.
+- The tab Chrome opens on launch now shows a short note saying why the window is open, instead of a blank
+  page. It stays, because Chrome quits when its last tab closes, which would otherwise restart the browser
+  between every round of edits.
+- README FAQ: which assistant model to use (the images come from your provider; your assistant's model
+  matters for briefing and judging), and which apps or extensions you need, with links.
+
+Tests: 262 pass, plus live runs: three rounds of edits in one browser, closed on browser_done, and the
+two-session case above.
+
+
 ## 1.1.0 (2026-10-11)
 
 This release comes out of two independent audits of the server (run on different models, read-only) and

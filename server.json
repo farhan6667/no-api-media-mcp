@@ -7,13 +7,13 @@
     "url": "https://github.com/farhan6667/no-api-media-mcp",
     "source": "github"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "no-api-media-mcp",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "transport": {
         "type": "stdio"
       },
@@ -51,6 +51,12 @@
         {
           "name": "NOAPI_SHARE_BROWSER",
           "description": "Default on: several sessions use the signed-in browser as separate tabs at once, through a loopback-only devtools port. Set to 0 on a shared machine; a second session then waits in a queue.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "NOAPI_BROWSER_IDLE_MINUTES",
+          "description": "Safety net: close the automated browser after this many idle minutes if browser_done was never called. Default 20; 0 turns it off.",
           "isRequired": false,
           "isSecret": false
         },

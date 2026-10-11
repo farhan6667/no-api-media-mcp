@@ -9,15 +9,40 @@ const GEMINI = "https://gemini.google.com";
 const GOOGLE_MEDIA_HOSTS = ["googleusercontent.com", "google.com", "gstatic.com", "ggpht.com", "googleapis.com", "flow-content.google"];
 
 export type FlowModel = "nano-banana-2" | "veo-lite" | "veo-fast" | "veo-quality" | "omni-flash";
-export type Aspect = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+export type Aspect = "16:9" | "4:3" | "1:1" | "3:4" | "4:5" | "9:16";
 
-const MODEL_LABEL: Record<FlowModel, string> = {
-  "nano-banana-2": "Nano Banana 2",
-  "veo-lite": "Veo 3.1 - Lite",
-  "veo-fast": "Veo 3.1 - Fast",
-  "veo-quality": "Veo 3.1 - Quality",
-  "omni-flash": "Omni 1.1 Flash",
+/** "nano-banana-2" is the API name for "the image model"; which Nano Banana version that is gets read from Flow's menu. */
+export function isImageModel(model: FlowModel): boolean {
+  return model === "nano-banana-2";
+}
+
+/**
+ * Which family each API model name means. Flow renames and replaces models (it dropped "Nano Banana 2"),
+ * so the server reads the menu and picks by family instead of a pinned label: the newest matching
+ * version, a full model over a "Lite" one when both exist. NOAPI_FLOW_IMAGE_MODEL pins an exact label.
+ */
+const FAMILY: Record<FlowModel, { family: RegExp; variant?: RegExp }> = {
+  "nano-banana-2": { family: /nano\s*banana/i },
+  "veo-lite": { family: /\bveo\b/i, variant: /\blite\b/i },
+  "veo-fast": { family: /\bveo\b/i, variant: /\bfast\b/i },
+  "veo-quality": { family: /\bveo\b/i, variant: /\bquality\b/i },
+  "omni-flash": { family: /\bomni\b/i, variant: /\bflash\b/i },
 };
+
+const version = (label: string) => Number(label.match(/(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+
+/** Pure: the menu label to click for this model, or undefined when the family is gone. */
+export function pickModelLabel(labels: string[], model: FlowModel, pinned?: string): string | undefined {
+  const clean = labels.map((l) => l.trim()).filter(Boolean);
+  if (pinned) return clean.find((l) => l.toLowerCase().includes(pinned.toLowerCase()));
+  const { family, variant } = FAMILY[model];
+  let pool = clean.filter((l) => family.test(l) && (!variant || variant.test(l)));
+  if (!variant) {
+    const full = pool.filter((l) => !/\blite\b/i.test(l));
+    if (full.length) pool = full;
+  }
+  return pool.sort((a, b) => version(b) - version(a))[0];
+}
 
 async function accountLabel(page: Page): Promise<string> {
   return (
@@ -76,14 +101,24 @@ async function configure(page: Page, mode: "Image" | "Video", model: FlowModel, 
   await sleep(600);
   await page.getByRole("radio", { name: mode }).click();
   await sleep(400);
-  await page.getByRole("radio", { name: aspect }).click().catch(() => undefined);
+  // A missing aspect used to be skipped silently, so the image came out in whatever shape was last used.
+  const aspectRadio = page.getByRole("radio", { name: aspect, exact: true });
+  if (!(await aspectRadio.count())) {
+    const offered = (await page.getByRole("radio").allInnerTexts().catch(() => [])).map((t) => t.trim()).filter((t) => /^\d+:\d+$/.test(t));
+    await page.keyboard.press("Escape").catch(() => undefined);
+    throw new Error(`Flow doesn't offer the ${aspect} aspect${offered.length ? ` (it offers ${offered.join(", ")})` : ""}. Pick one of those, or use codex for ${aspect}.`);
+  }
+  await aspectRadio.click();
   await page.getByRole("button", { name: "Select model family" }).click();
   await sleep(400);
-  // Match the label exactly at the end ("Nano Banana 2" must not pick "Nano Banana 2 Lite"); Flow may prefix an emoji.
-  const esc = MODEL_LABEL[model].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const item = page.getByRole("menuitem").filter({ hasText: new RegExp(`(^|\\s)${esc}\\s*$`) });
-  if (!(await item.count())) throw new Error(`Flow no longer offers "${MODEL_LABEL[model]}". The model list may have changed.`);
-  await item.first().click();
+  const labels = await page.getByRole("menuitem").allInnerTexts().catch(() => [] as string[]);
+  const pinned = isImageModel(model) ? process.env.NOAPI_FLOW_IMAGE_MODEL : undefined;
+  const label = pickModelLabel(labels, model, pinned);
+  if (!label) {
+    await page.keyboard.press("Escape").catch(() => undefined);
+    throw new Error(`Flow has no ${pinned ? `"${pinned}"` : model} model right now. Its menu shows: ${labels.map((l) => l.trim()).filter(Boolean).join(", ") || "nothing readable"}.`);
+  }
+  await page.getByRole("menuitem").filter({ hasText: label }).first().click();
   await sleep(400);
   // Output count radios have no accessible name, only the visible text x1..x4. Match that exact text,
   // so a layout change can never make us click an aspect radio by mistake.
@@ -106,7 +141,7 @@ async function mediaKeys(page: Page): Promise<string[]> {
 export async function flowQuote(page: Page, opts: { email?: string; model: FlowModel; aspect: Aspect; count: 1 | 2 | 3 | 4; project?: string }) {
   const st = await flowStatus(page, opts.email);
   const project = await openProject(page, st.slot, opts.project);
-  const mode = opts.model === "nano-banana-2" ? "Image" : "Video";
+  const mode = isImageModel(opts.model) ? "Image" : "Video";
   const credits = await configure(page, mode, opts.model, opts.aspect, opts.count);
   return { ...st, project, credits };
 }
@@ -142,7 +177,7 @@ export async function flowGenerate(
   await sleep(500);
   await page.getByRole("button", { name: "Start generation" }).click();
 
-  const isVideo = opts.model !== "nano-banana-2";
+  const isVideo = !isImageModel(opts.model);
   const fresh = await waitFor(
     async () => {
       const text = await page.locator("main").innerText().catch(() => "");

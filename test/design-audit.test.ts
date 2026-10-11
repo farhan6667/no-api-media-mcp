@@ -142,7 +142,7 @@ describe("preferred style from the learning journal", () => {
 describe("needs_from_user", () => {
   it("asks where it goes and what it goes with when neither is known", () => {
     const q = designBrief("hero", "x").needs_from_user!;
-    assert.equal(q.length, 2);
+    assert.equal(q.length, 3);
     assert.match(q[0], /Where will this be used/);
     assert.match(q[1], /What post, page or story/);
   });

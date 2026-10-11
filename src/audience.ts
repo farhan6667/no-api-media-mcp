@@ -62,8 +62,23 @@ export const AUDIENCE_PERSONAS: Persona[] = [
   },
 ];
 
+/**
+ * The persona whose pattern matches the longest phrase wins, so "security engineers" picks the security
+ * practitioner over the developer persona (which also matches "engineers"). Ties go to list order.
+ */
 export function matchPersona(...texts: (string | undefined)[]): Persona | undefined {
   const text = texts.filter(Boolean).join(" ");
   if (!text) return undefined;
-  return AUDIENCE_PERSONAS.find((p) => p.match.test(text));
+  let best: Persona | undefined;
+  let bestLen = 0;
+  for (const p of AUDIENCE_PERSONAS) {
+    const re = new RegExp(p.match.source, p.match.flags.includes("g") ? p.match.flags : p.match.flags + "g");
+    for (const m of text.matchAll(re)) {
+      if (m[0].length > bestLen) {
+        best = p;
+        bestLen = m[0].length;
+      }
+    }
+  }
+  return best;
 }

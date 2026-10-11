@@ -107,6 +107,7 @@ export interface OptimizeResult {
   setting: string;
   rounds: number;
   metadata: MetadataReport;
+  note?: string;
 }
 
 const KEEP_NOTE =
@@ -147,35 +148,74 @@ export async function finishMetadata(input: string, output: string, strip: boole
  * Make an image smaller for the web without a visible change.
  * Starts at WebP quality 82 and climbs until SSIM >= target (default 0.985), falling back to lossless WebP.
  */
-export async function optimizeImage(input: string, output: string, maxWidth?: number, target = 0.985, strip = true): Promise<OptimizeResult> {
+export type ImageFormat = "webp" | "jpg" | "png";
+
+/** The format an output path asks for, or undefined when its extension isn't one we write. */
+export function formatFromPath(path?: string): ImageFormat | undefined {
+  const m = /\.(webp|jpe?g|png)$/i.exec(path ?? "");
+  if (!m) return undefined;
+  const e = m[1].toLowerCase();
+  return e === "jpeg" || e === "jpg" ? "jpg" : (e as ImageFormat);
+}
+
+/**
+ * Make an image smaller without a visible change. WebP climbs from quality 82 and JPEG steps down the
+ * quantiser from 8 (smaller) to 2 (larger) until SSIM reaches the target (default 0.985); PNG is lossless.
+ * JPEG and PNG exist because some places (LinkedIn post uploads among them) don't take WebP.
+ */
+export async function optimizeImage(input: string, output: string, maxWidth?: number, target = 0.985, strip = true, format: ImageFormat = "webp"): Promise<OptimizeResult> {
   const scale = maxWidth ? ["-vf", `scale='min(iw,${maxWidth})':-2:flags=lanczos`] : [];
   const meta = strip ? ["-map_metadata", "-1"] : ["-map_metadata", "0"];
   let rounds = 0;
   let last = { q: 0, s: 0 };
   let setting = "";
-  for (const q of [82, 88, 92, 95, 98]) {
+  if (format === "png") {
     rounds++;
-    await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-quality", String(q), "-compression_level", "6", "-preset", "picture", output]);
-    const s = await ssim(input, output);
-    last = { q, s };
-    if (s >= target) {
-      setting = `webp q=${q}`;
-      break;
-    }
-  }
-  if (!setting) {
-    // Grainy dark gradients can sit just under the target even at q98 while looking identical.
-    // Within 0.01 of the target at q98 is visually lossless; keep it instead of a file several times larger.
-    if (last.s >= target - 0.01) setting = `webp q=98 (within 0.01 of target ${target})`;
-    else {
+    await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "png", "-compression_level", "9", "-pred", "mixed", output]);
+    last = { q: 100, s: await ssim(input, output) };
+    setting = "png lossless";
+  } else if (format === "jpg") {
+    for (const q of [8, 6, 5, 4, 3, 2]) {
       rounds++;
-      await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", output]);
-      last = { q: 100, s: await ssim(input, output) };
-      setting = `webp lossless (lossy q=98 only reached ${last.s.toFixed(4)})`;
+      await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "mjpeg", "-q:v", String(q), "-pix_fmt", "yuvj444p", output]);
+      const s = await ssim(input, output);
+      last = { q, s };
+      if (s >= target) {
+        setting = `jpeg q:v ${q}`;
+        break;
+      }
+    }
+    if (!setting) setting = `jpeg q:v 2 (best JPEG reached ${last.s.toFixed(4)}; use png if that matters)`;
+  } else {
+    for (const q of [82, 88, 92, 95, 98]) {
+      rounds++;
+      await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-quality", String(q), "-compression_level", "6", "-preset", "picture", output]);
+      const s = await ssim(input, output);
+      last = { q, s };
+      if (s >= target) {
+        setting = `webp q=${q}`;
+        break;
+      }
+    }
+    if (!setting) {
+      // Grainy dark gradients can sit just under the target even at q98 while looking identical.
+      // Within 0.01 of the target at q98 is visually lossless; keep it instead of a file several times larger.
+      if (last.s >= target - 0.01) setting = `webp q=98 (within 0.01 of target ${target})`;
+      else {
+        rounds++;
+        await ff(["-y", "-i", input, ...scale, ...meta, "-c:v", "libwebp", "-lossless", "1", "-compression_level", "6", output]);
+        last = { q: 100, s: await ssim(input, output) };
+        setting = `webp lossless (lossy q=98 only reached ${last.s.toFixed(4)})`;
+      }
     }
   }
   const metadata = await finishMetadata(input, output, strip);
-  return { ...result(input, output, last.s, setting, rounds), metadata };
+  const r = result(input, output, last.s, setting, rounds);
+  return {
+    ...r,
+    metadata,
+    ...(r.outputBytes > r.originalBytes ? { note: "The new file is larger than the original. Keep the original unless you need this format." } : {}),
+  };
 }
 
 /**

@@ -142,6 +142,29 @@ Tell `design_brief` who sees the asset (`context.audience`, plain English: "CISO
 
 Don't invent an audience it doesn't recognise, say so plainly and it's simply left unset.
 
+## It sets the text and logo itself, then delivers the final file
+
+Generated art is only half a post. Register the brands you publish under once:
+
+```sh
+brand_profiles(action="set", id="sfa", name="SFA", publisher="person", logo_dark="/path/sfa-logo.webp")
+```
+
+Then `compose` sets the headline and that brand's real logo over the art. It measures the picture to find the calmest corner, keeps the text out of the busy part, picks the text colour and a soft scrim for at least 4.5:1 contrast, and never adds a glow. `deliver` turns the result into the file a platform wants:
+
+```sh
+compose(input_path="art.png", headline="Shadow AI", brand_id="sfa", platform="linkedin-feed")
+deliver(input_path="art-composed-linkedin-feed.png", platform="linkedin-feed")
+```
+
+That gives an exact 1080x1350 JPEG, as small as it can be without a visible change, metadata stripped, under LinkedIn's limit, and checked for an empty band.
+
+## It measures its own work, and remembers your corrections
+
+`design_audit` doesn't only take the model's word for it: given the file, it measures it, and an empty band at an edge or a washed-out thumbnail caps the score so a weak result can't ship. `composition_check` does the same on demand and gives a crop that keeps your target shape.
+
+When you say a result was wrong (the crop, the colours, the wrong logo), the assistant records it with `design_feedback`, and every later brief applies it. A correction can be tied to one brand, so "use my personal mark" never leaks onto company posts.
+
 ## It handles several sessions at once
 
 Each Claude (or Cursor, or Codex) session runs its own copy of this server, but there's only one signed-in browser profile. By default a second session simply opens its own tab in the same browser, so both jobs run side by side.
@@ -441,6 +464,12 @@ Yes. It removes backgrounds locally, edits video with ffmpeg, exports every soci
 
 ### Are the providers fine with this?
 The browser-driven providers work like you would by hand, and their terms restrict automated use of the consumer sites, so using them is your call. Official command line routes such as Codex and Higgsfield are the safer ones. See [Safety and terms](#safety-and-terms).
+
+### Does it put text and logos on the image for me?
+Yes. `compose` renders your headline and a registered brand's real logo over the generated art, measuring where the calm area is and checking contrast. The image model itself never draws your logo or your words.
+
+### How does it get the right size and format for LinkedIn or X?
+`deliver` takes a platform name (linkedin-feed, x-post, instagram-story, github-social and others) and produces that exact size as an optimized JPEG under the platform's file limit. For a LinkedIn feed post it's 1080x1350; 1200x627 is only for link previews.
 
 ### I run several Claude sessions. Why did one say the browser is busy?
 With `share_browser` on (the default) sessions work side by side as separate tabs, so you'll mostly see this when sharing is off or the other browser couldn't be joined. The waiting session queues, reports its place and an estimate, and continues on its own.

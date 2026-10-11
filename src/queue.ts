@@ -11,7 +11,7 @@ export function queueDir(home: string): string {
   return join(home, "browser-queue");
 }
 
-function alive(pid: number): boolean {
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

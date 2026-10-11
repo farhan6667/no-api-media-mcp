@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.1.0 (2026-10-11)
+
+This release comes out of two independent audits of the server (run on different models, read-only) and
+a real mistake: a LinkedIn post image that shipped with an empty navy band across the top, a plain white
+glowing headline in a corner, and the company logo where the person's own mark belonged. Every root cause
+the audits found is fixed, and the fixes are measured rather than left as advice.
+
+**It stops asking the model for the wrong things**
+- Prompts no longer ask for empty space unless real text is going there: `context.overlayText` says what
+  you'll set on top, and the brief leaves one calm zone sized for it. Without it, the brief asks for a full
+  frame. The very-wide-crop line, the hero and poster prompts and an old margin lesson all used to ask for
+  empty space or a model-drawn logo; they don't anymore.
+- No words reach the image model unless you pass `exactText`.
+- A prompt linter checks every brief for instructions that contradict each other (space against full
+  frame, text against no text, a logo the model would draw), and the tests run it across every asset
+  type, crop and text option. Briefs return `prompt_warnings` if anything slips through.
+- Lessons are split into rules for the image model and `review_notes` for your own review, and ranked by
+  how specific they are to the asset, so new lessons actually reach the prompt.
+- 15 craft rules paraphrased from the official OpenAI and Google image and video prompting guides,
+  Anthropic's Apache-2.0 design skills and NN/g research, with sources in `docs/craft-sources.md`.
+
+**It sets text and logos itself, and delivers per platform**
+- `brand_profiles`: register the brands you publish under, each with who publishes (a person or a
+  company), its real logo files, palette and fonts. `design_brief` takes `brand_id`.
+- `compose`: renders the headline and the right brand's real logo over the art. The calmest corner is
+  measured and gets the text, the text box stops where the art gets busy, colour and a soft scrim are
+  chosen for at least 4.5:1 contrast, one colour, no glow, no eyebrow label, and a logo on its own tile
+  gets a feathered edge.
+- `deliver`: one step to a platform's file (linkedin-feed, instagram-story, x-post, github-social and
+  more): exact size, the smallest JPEG that still looks identical, metadata stripped, under the
+  platform's size limit, checked for an empty band.
+
+**It measures instead of trusting**
+- `composition_check` finds empty bands at the edges, including gradient skies, crops them away while
+  keeping a target aspect, and treats edges you left calm on purpose as planned.
+- `design_audit` measures the file it's given and caps the self-scores when there's an empty band or a
+  thumbnail that reads as one flat tone, so the model can't pass its own bad result.
+- `design_feedback`: corrections the user gives are kept locally and applied on the next brief. Only
+  the positive instruction reaches the image model; text and logo corrections come back as compositing
+  rules; a correction can be tied to one brand; `list` and `forget` manage them.
+
+**Fixes**
+- Flow picks its image and video models by family from the live menu (it dropped "Nano Banana 2"), and
+  `NOAPI_FLOW_IMAGE_MODEL` pins one. An aspect Flow doesn't offer now fails with a clear message instead
+  of silently generating at the last one used. `4:5` is accepted.
+- With browser sharing on, two sessions no longer share one Flow project, so one can't pick up the
+  other's image. Joining another session's browser now checks it's really the one that holds this
+  profile, and a profile handover mid-launch waits instead of failing.
+- `media_optimize` writes JPEG or PNG too (`format`, or a .jpg/.png output path), with the same SSIM
+  search, and says when a result is larger than the original.
+- `social_sizes` fills the frame by default, writes SSIM-targeted JPEGs with metadata stripped, and adds
+  `linkedin-square-1080` and `linkedin-link-1200x627`. The old `linkedin-1200x627` still works but is
+  left out of the defaults: it's the link-preview shape, not the feed size.
+- Audience personas pick the most specific match, so "security engineers" is no longer read as developers.
+
+Tests: 259 pass. Live checks on real files: composition_check found the actual 30% band, design_audit
+capped a 5/5 self-score on that image to revise, compose and deliver produced a clean 1080x1350 LinkedIn
+file, and the shared browser was re-tested with two real processes, both shared and queued.
+
+
 ## 1.0.0 (2026-10-11)
 
 The first stable release. Nothing new is bolted on here: 1.0.0 is the 0.11.0 feature set, now treated as

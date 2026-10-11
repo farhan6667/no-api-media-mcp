@@ -51,23 +51,39 @@ export class Browser {
     return ["SingletonLock", "SingletonCookie", "lockfile"].some((f) => existsSync(join(this.cfg.profileDir, f)));
   }
 
-  private devtoolsPort(): number | undefined {
+  /** Locked by another Chrome: the lock file is there, or Chrome said so while handing the profile over. */
+  private heldElsewhere(e: unknown): boolean {
+    return this.profileLocked() || /existing browser session|already in use|profile .*in use/i.test((e as Error)?.message ?? "");
+  }
+
+  /** Port and browser id from DevToolsActivePort, which the Chrome holding this profile writes inside it. */
+  private devtoolsEndpoint(): { port: number; wsPath: string } | undefined {
     try {
       const f = join(this.cfg.profileDir, "DevToolsActivePort");
       if (!existsSync(f)) return undefined;
-      const port = Number(readFileSync(f, "utf8").split("\n")[0]);
-      return Number.isInteger(port) && port > 0 ? port : undefined;
+      const [p, ws] = readFileSync(f, "utf8").split(/\r?\n/);
+      const port = Number(p);
+      const wsPath = (ws ?? "").trim();
+      return Number.isInteger(port) && port > 0 && wsPath.startsWith("/devtools/browser/") ? { port, wsPath } : undefined;
     } catch {
       return undefined;
     }
   }
 
-  /** Attach to whichever session already has this profile open, as a second tab in the same browser. */
+  /**
+   * Attach to whichever session already has this profile open, as a second tab in the same browser. A stale
+   * DevToolsActivePort could name a port some other program now uses, so we only join when the browser on
+   * that loopback port reports the same random browser id the file in our profile folder recorded.
+   */
   private async tryJoin(): Promise<BrowserContext | undefined> {
-    const port = this.devtoolsPort();
-    if (!port) return undefined;
+    const ep = this.devtoolsEndpoint();
+    if (!ep) return undefined;
     try {
-      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 5000 });
+      const res = await fetch(`http://127.0.0.1:${ep.port}/json/version`, { signal: AbortSignal.timeout(2000) });
+      const info = (await res.json()) as { webSocketDebuggerUrl?: string };
+      const ws = info.webSocketDebuggerUrl ?? "";
+      if (!ws.startsWith(`ws://127.0.0.1:${ep.port}/`) || !ws.endsWith(ep.wsPath)) return undefined;
+      const browser = await chromium.connectOverCDP(ws, { timeout: 5000 });
       const ctx = browser.contexts()[0];
       if (!ctx) {
         await browser.close().catch(() => undefined);
@@ -124,7 +140,7 @@ export class Browser {
     try {
       return this.adopt(await this.launch());
     } catch (e) {
-      if (!this.profileLocked()) throw e;
+      if (!this.heldElsewhere(e)) throw e;
     }
 
     // Another session holds the profile. Line up and wait, saying where we are, instead of failing.
@@ -145,7 +161,7 @@ export class Browser {
           try {
             return this.adopt(await this.launch());
           } catch (e) {
-            if (!this.profileLocked()) throw e;
+            if (!this.heldElsewhere(e)) throw e;
           }
           // Locked, yet no copy of this server owns it: that's the sign-in window or a stray Chrome,
           // and waiting won't help. Checked over about ten seconds, so a session that is just starting isn't misread.

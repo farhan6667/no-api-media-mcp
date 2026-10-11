@@ -6,12 +6,17 @@
  * This is deterministic text, no model call: the client's own model does the thinking, guided by it.
  */
 import { matchPersona } from "./audience.js";
+import { COMPOSITING_RULES, craftFor } from "./lessons.js";
 
 export const ASSET_TYPES = ["logo", "app-icon", "hero", "illustration", "product-shot", "social-post", "banner", "infographic", "poster", "background-video", "product-video", "texture", "environment-map"] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
 
 export interface Brand {
   name?: string;
+  /** Who publishes it: a person posting as themselves, or a company. Decides which mark goes on it. */
+  publisher?: "person" | "company";
+  /** Real logo files, for dark and light backgrounds. Composited afterwards, never generated. */
+  logo?: { dark?: string; light?: string };
   colors?: string[];
   mood?: string;
   audience?: string;
@@ -130,9 +135,9 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
     goal: "A wide image that sets the mood of the page and leaves room for the headline.",
     principles: ["Leave clear negative space where the headline sits (usually left or top third)", "One focal subject, depth of field", "Lighting and palette match the brand", "No text in the image, real text goes in HTML"],
     directions: [
-      { name: "Editorial photo", idea: "Realistic, cinematic.", prompt: (s, b) => `Cinematic editorial photograph: ${s}. Soft natural light, shallow depth of field, ${palette(b, "muted natural palette")}, mood: ${mood(b, "calm and premium")}. Subject on the right third, clean empty space on the left for a headline. No text, no logos, no watermark.` },
-      { name: "3D render", idea: "Polished product-style 3D scene.", prompt: (s, b) => `Premium 3D render: ${s}, studio lighting, soft reflections, ${palette(b, "brand-coloured accents on neutral background")}, subject right of centre, clean negative space left. No text.` },
-      { name: "Illustrated", idea: "Flat or semi-flat illustration.", prompt: (s, b) => `Modern flat illustration, wide composition: ${s}. Limited ${palette(b, "4-colour palette")}, subtle grain texture, generous empty area on the left for a headline. No text.` },
+      { name: "Editorial photo", idea: "Realistic, cinematic.", prompt: (s, b) => `Cinematic editorial photograph: ${s}. Soft natural light, shallow depth of field, ${palette(b, "muted natural palette")}, mood: ${mood(b, "calm and premium")}. Subject on the right third. No text, no logos, no watermark.` },
+      { name: "3D render", idea: "Polished product-style 3D scene.", prompt: (s, b) => `Premium 3D render: ${s}, studio lighting, soft reflections, ${palette(b, "brand-coloured accents on neutral background")}, subject right of centre. No text.` },
+      { name: "Illustrated", idea: "Flat or semi-flat illustration.", prompt: (s, b) => `Modern flat illustration, wide composition: ${s}. Limited ${palette(b, "4-colour palette")}, subtle grain texture. No text.` },
     ],
     critique: ["Is there real space for the headline?", "Does the focal point survive a mobile crop (centre square)?", "Faces, hands and objects anatomically right?", "Palette matches the site?", "No garbled text or watermark?"],
     provider: "flow (16:9, upscaled)",
@@ -167,10 +172,11 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
   },
   "social-post": {
     goal: "Stops the scroll in a feed in under a second.",
-    principles: ["One message, one visual", "High contrast, bold composition", "Leave room for the caption overlay if needed", "Platform aspect: 4:5 or 1:1 feed, 9:16 stories"],
+    principles: ["One message, one visual", "High contrast, bold composition", "Room for overlay text only when real text goes there", "Platform aspect: 4:5 or 1:1 feed, 9:16 stories"],
     directions: [
+      { name: "Cinematic concept", idea: "A premium rendered scene that makes an idea visible: tech, security, product launches.", prompt: (s, b) => `Cinematic premium concept render for a feed post: ${s}. One clear focal subject with real depth, set lighting with a key light and a thin rim, ${palette(b, "a restrained palette with one accent")}, fills the frame, no text.` },
       { name: "Bold graphic", idea: "Colour block + one object.", prompt: (s, b) => `Bold graphic social media visual: ${s} on a solid ${b.colors?.[0] ?? "vivid"} background, strong shadow, centred, no text.` },
-      { name: "Photo story", idea: "Authentic photo.", prompt: (s, b) => `Authentic candid photo for social media: ${s}, natural light, ${mood(b, "warm")}, space at the top for a caption, no text.` },
+      { name: "Photo story", idea: "Authentic photo.", prompt: (s, b) => `Authentic candid photo for social media: ${s}, natural light, ${mood(b, "warm")}, no text.` },
       { name: "Collage", idea: "Editorial cut-paper.", prompt: (s) => `Editorial cut-paper collage of ${s}, layered textures, playful, no text.` },
     ],
     critique: ["Readable as a thumbnail?", "Clear single message?", "Right aspect for the platform?"],
@@ -184,7 +190,7 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
     directions: [
       { name: "Abstract gradient mesh", idea: "Soft shapes.", prompt: (s, b) => `Abstract soft mesh background inspired by ${s}, ${palette(b, "brand colours")}, very low detail, wide, no text.` },
       { name: "Pattern", idea: "Repeating motif.", prompt: (s, b) => `Subtle repeating geometric pattern evoking ${s}, ${palette(b, "two tones")}, low contrast, wide, no text.` },
-      { name: "Scene", idea: "Wide landscape.", prompt: (s, b) => `Wide panoramic scene: ${s}, ${mood(b, "calm")}, large sky or empty area for text, no text.` },
+      { name: "Scene", idea: "Wide landscape.", prompt: (s, b) => `Wide panoramic scene: ${s}, ${mood(b, "calm")}, no text.` },
     ],
     critique: ["Would white or dark text be readable on it?", "Nothing important at the edges that will be cropped?"],
     provider: "flow",
@@ -254,18 +260,18 @@ const PLAYBOOKS: Record<AssetType, Playbook> = {
       {
         name: "Launch poster",
         idea: "Logo on top, big headline, platform chips, call to action at the bottom.",
-        prompt: (s) => `A premium portrait launch poster for ${s}: the logo large at the top, a bold two-line headline, a glowing pill with the key promise, a row of small chips for supported platforms, and a call-to-action bar at the bottom. Dark background with neon blue, cyan and violet glow, glossy 3D glass icons, crisp modern type.`,
+        prompt: (s, b) => `A premium portrait launch poster for ${s}: a clear spot at the top where the real logo is placed afterwards (don't draw a logo), a bold two-line headline, a glowing pill with the key promise, a row of small chips for supported platforms, and a call-to-action bar at the bottom. ${palette(b, "Dark background with neon blue, cyan and violet glow")}, glossy 3D glass icons, crisp modern type.`,
       },
       {
         name: "Scene poster",
         idea: "A cinematic 3D scene with the headline over it.",
-        prompt: (s) => `A cinematic premium poster for ${s}: a glowing 3D scene that shows the product in action, with the headline in large clean type over a calm area of the image and a short call to action at the bottom.`,
+        prompt: (s, b) => `A cinematic premium poster for ${s}: a glowing 3D scene that shows the product in action, ${palette(b, "rich brand-coloured light")}, with the headline in large clean type set into the scene and a short call to action at the bottom.`,
       },
     ],
     critique: ["Exact text, spelled right?", "Readable as a phone thumbnail?", "Does it feel premium and exciting, not template-like?"],
     provider: "codex (GPT Image), then flow",
     aspect: "3:4",
-    finish: "Export 1080x1350 for LinkedIn/Instagram feed, 1200x627 for link previews.",
+    finish: "Export 1080x1350 (linkedin-portrait-1080x1350) for the LinkedIn or Instagram feed; 1200x627 is only for link previews.",
   },
   texture: {
     goal: "A seamless, tileable surface for a website background or a 3D material map. It is meant to repeat, never to be looked at once.",
@@ -389,13 +395,18 @@ const PHOTOREAL_ASSETS = new Set<AssetType>(["hero", "illustration", "product-sh
  * and what it goes with (that sets the message). When either is missing the brief says so, so the client
  * asks the user once instead of generating from a guess.
  */
-export function missingContext(ctx: Context): string[] | undefined {
+const PUBLIC_ASSETS = new Set<AssetType>(["hero", "banner", "social-post", "poster", "infographic"]);
+
+export function missingContext(ctx: Context, asset?: AssetType, brand: Brand = {}): string[] | undefined {
   const q: string[] = [];
   if (!ctx.usage && !ctx.targetAspect) {
     q.push("Where will this be used, which platform and which spot (a LinkedIn feed post, a GitHub README header, a website hero)? That decides the size and the crop.");
   }
   if (!ctx.goal && !ctx.about) {
     q.push("What post, page or story does it go with, and what should people feel or do when they see it? That decides the message.");
+  }
+  if (asset && PUBLIC_ASSETS.has(asset) && !brand.publisher) {
+    q.push("Who publishes this: a person (their own mark goes on it) or a company (the company mark)? Set brand.publisher, or pass a registered brand_id. Use the real logo file, never a generated one.");
   }
   return q.length ? q : undefined;
 }
@@ -422,6 +433,11 @@ export interface Context {
   exactText?: string[];
   /** The shape the image will finally be cropped to, for example "3.2:1" for a profile banner. */
   targetAspect?: string;
+  /**
+   * Words you will set over the art yourself afterwards (a headline, a name). The model never draws them;
+   * the brief only leaves room for them. Leave it out and the brief asks for a full frame with no empty band.
+   */
+  overlayText?: string[];
 }
 
 /** "3.2:1", "16:9" or "3.2" to a width over height number, or undefined. */
@@ -494,25 +510,24 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   lines.push(`It will be used ${ctx.usage ?? DEFAULT_USAGE[asset]}${who ? `, and the people seeing it are ${who}` : ""}.`);
   if (ctx.goal) lines.push(`The goal: ${ctx.goal.replace(/\.$/, "")}.`);
   lines.push(QUALITY[style.tier ?? "premium"]);
-  lines.push(`What I have in mind: ${soften(visual)}`);
+  // With exact text the model draws those words, so a direction's own "no text" would contradict it.
+  const v = ctx.exactText?.length ? soften(visual).replace(/,?\s*no text\b\.?/gi, ".").replace(/\.\./g, ".") : soften(visual);
+  lines.push(`What I have in mind: ${v}`);
   const cue = domainCues(name, ctx.about, ctx.audience, ctx.goal);
   if (cue && asset !== "logo") lines.push(`Make the field obvious without words (${cue.field}): ${cue.cues}.`);
   const tp = thirdPartyRule(name, ctx.about, ctx.goal);
   if (tp) lines.push(tp);
   const ratio = parseAspect(ctx.targetAspect);
   if (ratio && ratio > 2.1) {
-    lines.push(`The final crop is very wide (${ctx.targetAspect}). Keep every important element in the middle horizontal band and leave the top and bottom as calm dark space, so nothing important is cut off.`);
+    lines.push(`The final crop is very wide (${ctx.targetAspect}). Keep every important element in the middle horizontal band, and carry the setting all the way to the top and bottom edges so a crop never shows an empty strip.`);
   }
   if (style.look) lines.push(`Overall visual style: ${LOOKS[style.look]}.`);
   if (brand.colors?.length) lines.push(`Use the brand colours ${brand.colors.join(", ")} as the main palette.`);
-  if (TEXT_ASSETS.has(asset) || (asset === "logo" && ctx.exactText?.length)) {
-    if (ctx.exactText?.length) {
-      lines.push(`Include exactly this text, spelled exactly like this, in clean modern type: ${ctx.exactText.map((t) => `"${t}"`).join(", ")}. No other words.`);
-    } else {
-      lines.push("Keep any text short and spell it correctly.");
-    }
+  if ((TEXT_ASSETS.has(asset) || asset === "logo") && ctx.exactText?.length) {
+    lines.push(`Include exactly this text, spelled exactly like this, in clean modern type: ${ctx.exactText.map((t) => `"${t}"`).join(", ")}. No other words.`);
   } else {
-    lines.push("Don't put any words, letters or third-party logos in the image.");
+    // Any real words are set over the art afterwards, so the model draws none.
+    lines.push("Don't put any words, letters or logos in the image.");
   }
   return lines.join(" ");
 }
@@ -649,6 +664,26 @@ function styled(prompt: string, asset: AssetType, s: Style): string {
 /** image_generate accepts 4000 characters. Advice is added only while it fits, never cutting the brief itself. */
 export const PROMPT_BUDGET = 3900;
 
+/**
+ * Catches a prompt that asks for two opposite things, which is how the empty band and the model-drawn
+ * text got through before: one part said "leave space for text", another said "fill the frame".
+ * Returns a short description of each clash; an empty list means the prompt is consistent.
+ */
+export function lintPrompt(prompt: string): string[] {
+  const p = prompt.toLowerCase();
+  const out: string[] = [];
+  const asksSpace = /(?<!no )(empty|blank) (space|area|band|sky)|calm dark space|negative space (on|left|right)|space (at the top|for (a|the) (headline|caption|text))|room for (the )?(text|headline|caption)/.test(p);
+  const asksFill = /fill the frame|edge to edge|to every edge|all the way to the/.test(p);
+  if (asksSpace && asksFill && !/low-detail zone|keep one side calm/.test(p)) out.push("asks for empty space and for a full frame at once");
+  const noWords = /don't put any words|no text/.test(p);
+  const someWords = /include exactly this text|keep any text short|spell it correctly/.test(p);
+  if (noWords && someWords) out.push("asks for no words and for text at once");
+  if (/(draw|show|put|add|with) (the |a |its )?(brand |company )?logo|the logo (large|at the top|in the corner)/.test(p.replace(/don't draw (a|any) logo|never let the model draw a real logo[^.]*\./g, ""))) {
+    out.push("asks the image model to draw a logo; place the real file afterwards instead");
+  }
+  return out;
+}
+
 export function withAdvice(base: string, advice: string[]): string {
   const kept: string[] = [];
   for (const a of advice) {
@@ -661,10 +696,36 @@ export interface BriefExtra {
   /** One sentence built from the local audit journal: what earlier results of this kind got wrong. */
   learned?: string;
   learnedItems?: { criterion: string; average: number; seen: number; advice: string }[];
-  /** Built-in lessons that apply to this asset type. */
+  /** Built-in lessons that apply to this asset type and belong in the image prompt. */
   lessons?: string[];
+  /** Built-in lessons for the client's own review and compositing steps, never sent to the image model. */
+  reviewNotes?: string[];
   /** The tier/look that has actually shipped most often for this asset type, from the local journal. Only applied when the caller didn't ask for a specific tier or look. */
   preferredStyle?: { tier?: string; look?: string; shipped: number };
+  /** A registered brand's own heading and body fonts, used instead of the domain pairing. */
+  fonts?: { heading: string; body: string; googleFontsUrl?: string };
+  /** Corrections this user gave on earlier results (design_feedback): rules for the image, and for the text and logos set on top. */
+  userFeedback?: { image: string[]; compositing: string[] };
+}
+
+/** Assets that are shown on their own in a feed or a page, where an empty band reads as a mistake. */
+const FRAMED_ASSETS = new Set<AssetType>(["banner", "social-post", "poster", "hero"]);
+
+/**
+ * An empty band "for text" that never gets text is one of the most common ways a result looks unfinished.
+ * Ask for room only when real words are going on top, and size it for them; otherwise ask for a full frame.
+ */
+export function spaceAdvice(asset: AssetType, ctx: Context): string | undefined {
+  if (!FRAMED_ASSETS.has(asset) || ctx.exactText?.length) return undefined;
+  const words = ctx.overlayText?.filter(Boolean) ?? [];
+  // A website hero always carries the page headline in HTML, even when the brief doesn't say what it is.
+  if (!words.length && asset === "hero") {
+    return "The page headline is set over this in HTML afterwards: keep one side calm and low detail, about a third of the width, and let the setting continue to every edge. Don't draw any words.";
+  }
+  if (words.length) {
+    return `Leave one calm, low-detail zone of about a quarter of the frame, on the side where this will be set afterwards: ${words.map((w) => `"${w}"`).join(", ")}. Don't draw the words.`;
+  }
+  return "Nothing will be written on top, so fill the frame edge to edge with the subject and its setting, carrying detail and light right into every corner.";
 }
 
 export function designBrief(asset: AssetType, subject: string, brand: Brand = {}, style: Style = {}, ctx: Context = {}, extra: BriefExtra = {}) {
@@ -675,7 +736,7 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     if (cueField && PALETTES[cueField]) brand = { ...brand, colors: PALETTES[cueField] };
     else if (persona?.paletteHint) brand = { ...brand, colors: persona.paletteHint };
   }
-  const typography = (cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING;
+  const typography = extra.fonts ?? ((cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING);
   const preferred = extra.preferredStyle;
   const preferredTier = preferred?.tier && preferred.tier in TIER_STYLE ? (preferred.tier as Style["tier"]) : undefined;
   const preferredLook = preferred?.look && preferred.look in LOOKS ? (preferred.look as Look) : undefined;
@@ -688,26 +749,42 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
     ...(persona ? [persona.critique] : []),
     ...(PHOTOREAL_ASSETS.has(asset) ? [PLATFORM_HONESTY_CRITIQUE] : []),
   ];
+  const directions = p.directions.map((d) => ({
+      name: d.name,
+      idea: d.idea,
+      prompt: withAdvice(narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx), [
+        ...(extra.userFeedback?.image.length ? [`This user asked for, from earlier results: ${extra.userFeedback.image.join(" ")}`] : []),
+        ...(spaceAdvice(asset, ctx) ? [spaceAdvice(asset, ctx)!] : []),
+        ...(persona ? [`Who is actually looking at this: ${persona.tone}`] : []),
+        ...(extra.learned ? [extra.learned] : []),
+        ...(extra.lessons?.length ? [`Rules learned from past results: ${extra.lessons.join(" ")}`] : []),
+        `Craft: ${craftFor(asset, 2).join(" ")}`,
+      ]),
+  }));
+  const warnings = [...new Set(directions.flatMap((d) => lintPrompt(d.prompt)))];
   return {
     asset,
     style: s,
     goal: p.goal,
     principles: p.principles,
-    directions: p.directions.map((d) => ({
-      name: d.name,
-      idea: d.idea,
-      prompt: withAdvice(narrative(asset, styled(d.prompt(subject, brand), asset, s), brand, s, ctx), [
-        ...(persona ? [`Who is actually looking at this: ${persona.tone}`] : []),
-        ...(extra.learned ? [extra.learned] : []),
-        ...(extra.lessons?.length ? [`Rules learned from past results: ${extra.lessons.join(" ")}`] : []),
-      ]),
-    })),
+    directions,
+    prompt_warnings: warnings.length ? warnings : undefined,
+    review_notes: extra.reviewNotes ?? [],
     learned: extra.learnedItems ?? [],
     preferred_style: preferred ? { ...preferred, applied: preferredApplied } : undefined,
     typography: asset === "logo" ? undefined : { ...typography, note: "Use this pairing for any real wordmark or text you composite afterwards, loaded from its Google Fonts URL, instead of a generic system font." },
     audience_persona: persona ? { id: persona.id, tone: persona.tone } : undefined,
     alt_text_suggestion: altTextSuggestion(asset, subject, ctx),
-    needs_from_user: missingContext(ctx),
+    craft_notes: craftFor(asset, 6),
+    needs_from_user: missingContext(ctx, asset, brand),
+    compositing_rules:
+      asset === "logo" || asset === "texture" || asset === "environment-map"
+        ? undefined
+        : {
+            how: "Apply these yourself when you set the real text and logo over the generated art, before design_audit.",
+            from_this_user: extra.userFeedback?.compositing ?? [],
+            built_in: COMPOSITING_RULES,
+          },
     critique: [...p.critique, ...extraCritique],
     eye_catch_audit: {
       how: "After looking at each result, score every criterion 0 to 5 and call design_audit with the scores. Ship only when the average is 4 or more and nothing is below 3.",

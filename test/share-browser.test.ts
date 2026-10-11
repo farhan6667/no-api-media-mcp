@@ -26,7 +26,8 @@ describe("browser sharing is gated on the setting in the code", () => {
   it("only connects to an existing browser over CDP when sharing is on", () => {
     assert.match(src, /if \(this\.cfg\.shareBrowser && this\.profileLocked\(\)\)/);
   });
-  it("only connects on loopback", () => {
-    assert.match(src, /connectOverCDP\(`http:\/\/127\.0\.0\.1:\$\{port\}`/);
+  it("only connects on loopback, and only to the browser that wrote our profile's DevToolsActivePort", () => {
+    assert.match(src, /fetch\(`http:\/\/127\.0\.0\.1:\$\{ep\.port\}\/json\/version`/);
+    assert.match(src, /ws\.startsWith\(`ws:\/\/127\.0\.0\.1:\$\{ep\.port\}\/`\) \|\| !ws\.endsWith\(ep\.wsPath\)/);
   });
 });

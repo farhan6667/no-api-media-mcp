@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import tls from "node:tls";
 import { env, extraBinDirs, scrubbedEnv } from "./config.js";
-import { ff, ffmpegPath } from "./optimize.js";
+import { ff, ffmpegPath, ssim } from "./optimize.js";
 
 /**
  * Local media editing, no network, no API keys: ffmpeg for video and resizing, rembg (BiRefNet models)
@@ -81,6 +81,8 @@ export const SOCIAL_PRESETS = {
   "og-1200x630": { w: 1200, h: 630, ext: ".jpg" },
   "x-1600x900": { w: 1600, h: 900, ext: ".jpg" },
   "linkedin-1200x627": { w: 1200, h: 627, ext: ".jpg" },
+  "linkedin-link-1200x627": { w: 1200, h: 627, ext: ".jpg" },
+  "linkedin-square-1080": { w: 1080, h: 1080, ext: ".jpg" },
   "linkedin-portrait-1080x1350": { w: 1080, h: 1350, ext: ".jpg" },
   "instagram-square-1080": { w: 1080, h: 1080, ext: ".jpg" },
   "instagram-portrait-1080x1350": { w: 1080, h: 1350, ext: ".jpg" },
@@ -97,6 +99,13 @@ export const SOCIAL_PRESETS = {
 export type SocialPreset = keyof typeof SOCIAL_PRESETS;
 
 /**
+ * Kept so existing calls don't break, but left out of "all": "linkedin-1200x627" read like the feed size,
+ * when it's the link-preview shape. Use linkedin-portrait-1080x1350 or linkedin-square-1080 for a post.
+ */
+export const DEPRECATED_PRESETS = new Set<SocialPreset>(["linkedin-1200x627"]);
+export const DEFAULT_PRESETS = (Object.keys(SOCIAL_PRESETS) as SocialPreset[]).filter((p) => !DEPRECATED_PRESETS.has(p));
+
+/**
  * cover: fill the frame, cropping the edges (good for photos).
  * contain: fit the whole image inside a blurred, darkened copy of itself (good for logos and posters, nothing is cut).
  * pad: fit inside a solid colour.
@@ -110,17 +119,97 @@ function fitFilter(w: number, h: number, fit: "cover" | "contain" | "pad", padCo
   );
 }
 
-export async function socialSizes(input: string, outFor: (preset: SocialPreset, ext: string) => string, presets: SocialPreset[], fit: "cover" | "contain" | "pad", padColor = "0x0b1020") {
-  const results: { preset: string; file: string; width: number; height: number }[] = [];
+export interface Sized {
+  file: string;
+  width: number;
+  height: number;
+  bytes: number;
+  ssim?: number;
+  setting: string;
+}
+
+/**
+ * One image at one exact size. Rendered losslessly at that size first, then JPEG steps down the quantiser
+ * while SSIM against that reference stays at or above the target. With maxBytes, quality keeps stepping down
+ * until the file fits, and the result says how close to the target it stayed. Metadata is stripped.
+ */
+export async function encodeAtSize(
+  input: string,
+  out: string,
+  w: number,
+  h: number,
+  fit: "cover" | "contain" | "pad",
+  opts: { padColor?: string; target?: number; maxBytes?: number; png?: boolean } = {},
+): Promise<Sized> {
+  const padColor = opts.padColor ?? "0x0b1020";
+  const target = opts.target ?? 0.985;
+  if (opts.png) {
+    await ff(["-y", "-i", input, "-filter_complex", fitFilter(w, h, fit === "contain" ? "pad" : fit, padColor), "-frames:v", "1", "-map_metadata", "-1", "-compression_level", "9", out]);
+    return { file: out, width: w, height: h, bytes: statSync(out).size, setting: "png lossless" };
+  }
+  const dir = workdir();
+  try {
+    const ref = join(dir, "ref.png");
+    await ff(["-y", "-i", input, "-filter_complex", fitFilter(w, h, fit, padColor), "-frames:v", "1", ref]);
+    let chosen = { q: 2, s: 0 };
+    for (const q of [7, 5, 4, 3, 2]) {
+      await ff(["-y", "-i", ref, "-map_metadata", "-1", "-c:v", "mjpeg", "-q:v", String(q), "-pix_fmt", "yuvj444p", out]);
+      const s = await ssim(ref, out);
+      chosen = { q, s };
+      if (s >= target) break;
+    }
+    let setting = `jpeg q:v ${chosen.q}`;
+    if (opts.maxBytes && statSync(out).size > opts.maxBytes) {
+      // Over the platform's limit: trade quality for size, and say so.
+      for (const q of [3, 4, 5, 7, 10, 14]) {
+        if (q <= chosen.q) continue;
+        await ff(["-y", "-i", ref, "-map_metadata", "-1", "-c:v", "mjpeg", "-q:v", String(q), "-pix_fmt", "yuvj420p", out]);
+        chosen = { q, s: await ssim(ref, out) };
+        setting = `jpeg q:v ${q} 4:2:0 (stepped down to fit ${Math.round(opts.maxBytes / 1024)} KB)`;
+        if (statSync(out).size <= opts.maxBytes) break;
+      }
+    }
+    return { file: out, width: w, height: h, bytes: statSync(out).size, ssim: Number(chosen.s.toFixed(4)), setting };
+  } finally {
+    cleanup(dir);
+  }
+}
+
+/** Every size from one image, each through encodeAtSize. */
+export async function socialSizes(
+  input: string,
+  outFor: (preset: SocialPreset, ext: string) => string,
+  presets: SocialPreset[],
+  fit: "cover" | "contain" | "pad",
+  padColor = "0x0b1020",
+  target = 0.985,
+) {
+  const results: (Sized & { preset: string })[] = [];
   for (const p of presets) {
     const { w, h, ext } = SOCIAL_PRESETS[p];
-    const f = ext === ".png" ? (fit === "contain" ? "pad" : fit) : fit; // icons stay crisp, no blur halo
-    const out = outFor(p, ext);
-    await ff(["-y", "-i", input, "-filter_complex", fitFilter(w, h, f, padColor), "-frames:v", "1", ...(ext === ".jpg" ? ["-q:v", "2"] : []), out]);
-    results.push({ preset: p, file: out, width: w, height: h });
+    const r = await encodeAtSize(input, outFor(p, ext), w, h, fit, { padColor, target, png: ext === ".png" });
+    results.push({ preset: p, ...r });
   }
   return results;
 }
+
+/**
+ * Where a finished image is going, as data: size, format and the platform's file-size limit. deliver uses
+ * this so a final is right for its platform in one step instead of three hand-tuned ones.
+ */
+export const PLATFORMS = {
+  "linkedin-feed": { w: 1080, h: 1350, maxBytes: 5 * 1024 * 1024, note: "LinkedIn feed post, portrait 4:5 (takes the most room in a phone feed)" },
+  "linkedin-square": { w: 1080, h: 1080, maxBytes: 5 * 1024 * 1024, note: "LinkedIn feed post, square" },
+  "linkedin-link": { w: 1200, h: 627, maxBytes: 5 * 1024 * 1024, note: "LinkedIn link preview card, not a feed post" },
+  "instagram-feed": { w: 1080, h: 1350, maxBytes: 8 * 1024 * 1024, note: "Instagram feed post, portrait 4:5" },
+  "instagram-story": { w: 1080, h: 1920, maxBytes: 8 * 1024 * 1024, note: "Story or reel cover, 9:16; keep text out of the top 14% and bottom 20%" },
+  "x-post": { w: 1600, h: 900, maxBytes: 5 * 1024 * 1024, note: "X post image, 16:9" },
+  "facebook-feed": { w: 1080, h: 1350, maxBytes: 8 * 1024 * 1024, note: "Facebook feed post, portrait 4:5" },
+  "youtube-thumbnail": { w: 1280, h: 720, maxBytes: 2 * 1024 * 1024, note: "YouTube thumbnail, 2 MB limit" },
+  "github-social": { w: 1280, h: 640, maxBytes: 1024 * 1024, note: "GitHub repository social preview, 1 MB limit" },
+  og: { w: 1200, h: 630, maxBytes: 5 * 1024 * 1024, note: "Open Graph link preview" },
+} as const;
+export type Platform = keyof typeof PLATFORMS;
 
 // ---------- video editing ----------
 

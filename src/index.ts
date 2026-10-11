@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSetup } from "./setup.js";
@@ -8,25 +9,30 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { Browser } from "./browser.js";
 import { loadConfig, readConfigFile, readState, STRIP_NOTICE, trustSystemCertificates, writeConfigFile, writeState } from "./config.js";
-import { optimizeImage, optimizeVideo } from "./optimize.js";
+import { formatFromPath, optimizeImage, optimizeVideo, type ImageFormat } from "./optimize.js";
 import { chatgptImage, chatgptLastReply, chatgptStatus } from "./providers/chatgpt.js";
 import { codexImage, codexStatus } from "./providers/codex.js";
 import { genericGenerate, genericStatus, loadSpecs } from "./providers/generic.js";
 import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, higgsfieldStatus } from "./providers/higgsfield.js";
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
 import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
-import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, type Look } from "./design.js";
+import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, parseAspect, type Look } from "./design.js";
 import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
 import { classifyFailure, providerHealth, readReliability, recordProviderOutcome } from "./reliability.js";
 import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
 import { learnedFor, learnedSentence, preferredStyleFor, readJournal, record } from "./learning.js";
 import { lessonsFor } from "./lessons.js";
 import { projectProfile, TIERS } from "./project.js";
-import { probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type SocialPreset, type VideoOp } from "./edit.js";
+import { DEFAULT_PRESETS, encodeAtSize, PLATFORMS, probe, removeBackground, SOCIAL_PRESETS, socialSizes, videoEdit, type Platform, type SocialPreset, type VideoOp } from "./edit.js";
+import { calmWidth, composeHtml, cornerStats, logoHasTile, placeTextAndLogo, sampleGrey, textStyleFor, type Corner } from "./compose.js";
 import { contactSheet, MAX_ITEMS as CONTACT_SHEET_MAX } from "./contact-sheet.js";
 import { readManifest, usageReport } from "./report.js";
+import { alive as pidAlive } from "./queue.js";
 import { loopCheck } from "./loop-check.js";
 import { cssVariables, dominantColors } from "./palette.js";
+import { feedbackFor, forgetFeedback, readFeedback, recordFeedback } from "./feedback.js";
+import { applyCrop, compositionCheck, FLAT_THUMBNAIL, type Edge } from "./composition.js";
+import { getBrand, mergeBrand, readBrands, removeBrand, saveBrand } from "./brands.js";
 
 // Single source of truth for the version: package.json (two levels up from dist/src).
 const VERSION: string = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version;
@@ -137,7 +143,7 @@ const INSTRUCTIONS = `no-api-media makes images and videos with the user's own A
 
 Recognise what kind of project this is yourself, before asking, and go straight to the matching asset types and tools:
 - A GitHub repo (package.json, a .git folder, a README): hero/banner for the README, a logo, a github-social-1280x640 preview and a favicon. social_sizes covers all the standard sizes in one call.
-- A single social post or launch announcement (LinkedIn, X, Instagram, no project files involved): asset_type "social-post" or "poster", then social_sizes with the one platform preset that matches (linkedin-1200x627, x-1600x900, instagram-square-1080, and so on).
+- A single social post or launch announcement (LinkedIn, X, Instagram, no project files involved): asset_type "social-post" or "poster", then social_sizes with the one platform preset that matches (linkedin-portrait-1080x1350 or linkedin-square-1080 for a feed post, x-1600x900, instagram-square-1080, and so on; linkedin-link-1200x627 is only for link previews).
 - A website or portfolio that mentions three.js, react-three-fiber, @react-three, babylon, spline or WebGL (check package.json and the code, project_profile already reads these files): reach for asset_type "environment-map" for reflections and ambient lighting and "texture" for tileable materials or backgrounds, on top of the usual hero and background-video. Run loop_check on any looping clip before it ships; run contact_sheet when there are several candidate environment maps or textures to compare.
 - An animated landing page or portfolio (motion, framer-motion, gsap, lottie in package.json, or the user says "animated"): asset_type "background-video" or "product-video", built with the motion timing already baked into those playbooks, then loop_check before calling it done.
 Any of these can combine (a GitHub repo for a three.js site needs both the repo treatment and the 3D-specific assets). When none of this matches, fall back to asking what the asset is for.
@@ -162,6 +168,9 @@ When the user asks for any image or video for their project, do this without ask
 8. Comparing several directions or iterations before picking one? Call contact_sheet to lay them on one grid instead of opening each file alone. Curious what's actually been generated in a project over time? usage_report totals the local manifest by provider, type and day, no uploads.
    Want the site's CSS variables to actually match a generated hero or banner instead of guessing? Run palette_extract on the chosen file and wire its colours into the stylesheet; it names them by how dominant they are, not by a guessed role, so pick which one is the primary or the accent yourself.
    For a texture or environment-map, verify the tile or the seam for real before using it: contact_sheet with four copies of a texture shows a repeat at a glance, and the 2:1 wrap on an environment-map should be checked by eye at the left-right edge.
+When the user criticises a result (a colour, a crop, an empty band, how the text looks, the wrong logo), call design_feedback straight away with what was wrong and what they want instead, so it's never repeated. design_brief brings these back: follow its user_feedback in the prompt and its compositing_rules when you set text and logos.
+Set text and logos with compose (pass brand_id from brand_profiles, so the right mark goes on: a person's own posts get their personal mark, company posts the company mark) rather than writing your own HTML, then finish with deliver for the platform (linkedin-feed, x-post, github-social and so on) instead of hand-tuning size and quality.
+Run composition_check on drafts and on the final file: an empty band at an edge gets cropped, or the headline goes into it on purpose. Pass context.overlayText to design_brief only when you will really set words on top; otherwise it asks the model for a full frame.
 Several sessions at once: with share_browser on (the default) each session gets its own tab in the same signed-in browser and jobs run side by side. If sharing is off, or the other browser can't be joined, a job waits in a queue and says so in its progress messages (its place in line, and an estimate once there's history), then carries on by itself, so tell the user it's queued rather than retrying.
 For videos: always call video_quote first, tell the user the credit cost, and pass max_credits. Never solve captchas; if a site asks for a human check or a sign-in, tell the user to run accounts_login.`;
 
@@ -169,7 +178,7 @@ const server = new McpServer({ name: "no-api-media-mcp", version: VERSION }, { i
 const specs = loadSpecs(cfg.home);
 if (specs.errors.length) log("ignored provider specs:", specs.errors.join("; "));
 
-const ASPECTS = ["16:9", "4:3", "1:1", "3:4", "9:16"] as const;
+const ASPECTS = ["16:9", "4:3", "1:1", "3:4", "4:5", "9:16"] as const;
 const FLOW_VIDEO = ["veo-lite", "veo-fast", "veo-quality", "omni-flash"];
 const CLI_PROVIDERS = ["codex", "higgsfield"];
 const BROWSER_BUILTINS = ["chatgpt", "flow", "gemini"];
@@ -229,6 +238,36 @@ function job<T>(extra: Extra, key: string, label: string, fn: (onTick: (ms: numb
       return fn(p.onTick, p.status);
     })
     .finally(p.done);
+}
+
+/**
+ * Flow finds a new result by comparing the project's tiles before and after, so two sessions generating
+ * in the same Flow project at once could pick up each other's image. One session at a time owns the saved
+ * project (a small pid lock); any other session works in a project of its own, kept for its lifetime.
+ */
+let sessionFlowProject: string | undefined;
+const flowLock = () => join(cfg.home, "flow-project.lock");
+function claimFlowProject(): string | undefined {
+  if (sessionFlowProject) return sessionFlowProject;
+  try {
+    const owner = Number(readFileSync(flowLock(), "utf8"));
+    if (owner && owner !== process.pid && pidAlive(owner)) return undefined;
+  } catch {
+    /* no lock yet */
+  }
+  mkdirSync(cfg.home, { recursive: true });
+  writeFileSync(flowLock(), String(process.pid));
+  return readState(cfg).flowProject;
+}
+function keepFlowProject(url: string) {
+  let owner = 0;
+  try {
+    owner = Number(readFileSync(flowLock(), "utf8"));
+  } catch {
+    /* no lock */
+  }
+  if (owner === process.pid) writeState(cfg, { flowProject: url });
+  else sessionFlowProject = url;
 }
 
 /** Keep raw outputs out of git: .ai-media ignores itself. */
@@ -332,6 +371,8 @@ server.registerTool(
 
 const brandShape = {
   name: z.string().max(80).optional(),
+  publisher: z.enum(["person", "company"]).optional().describe("Who publishes it: a person posting as themselves (their own mark) or a company (the company mark)"),
+  logo: z.object({ dark: z.string().max(400).optional(), light: z.string().max(400).optional() }).optional().describe("Real logo files for dark and light backgrounds; composited afterwards, never generated"),
   colors: z.array(z.string().max(30)).max(6).optional().describe("Hex codes from the project, e.g. #0f6b3a"),
   mood: z.string().max(120).optional(),
   audience: z.string().max(120).optional(),
@@ -351,6 +392,7 @@ server.registerTool(
       asset_type: z.enum(ASSET_TYPES),
       subject: z.string().min(3).max(600).describe("What it should show or express, e.g. 'image and video generation without API keys'"),
       brand: z.object(brandShape).default({}),
+      brand_id: z.string().max(40).optional().describe("A brand registered with brand_profiles (e.g. sfa, nexaforge): fills in publisher, logo files, palette and fonts"),
       style: z
         .object({
           tier: z.enum(TIERS).optional().describe("From project_profile, or what the user asked for"),
@@ -369,19 +411,26 @@ server.registerTool(
           goal: z.string().max(300).optional().describe("What it must achieve, e.g. 'make developers get the idea in 5 seconds'"),
           exactText: z.array(z.string().max(120)).max(20).optional().describe("Every word that must appear, spelled exactly"),
           targetAspect: z.string().max(20).optional().describe('The shape the image is finally cropped to, e.g. "3.2:1" for a profile banner. Very wide crops get composition guidance'),
+          overlayText: z.array(z.string().max(120)).max(6).optional().describe("Words you'll set over the art yourself afterwards (a headline). The brief leaves room only for these; leave it out and it asks for a full frame with no empty band"),
         })
         .default({}),
     },
   },
   async (a) => {
+    const profile = a.brand_id ? getBrand(cfg.home, a.brand_id) : undefined;
+    if (a.brand_id && !profile) return fail(new Error(`No brand "${a.brand_id}". Registered: ${readBrands(cfg.home).map((b) => b.id).join(", ") || "none yet"} (brand_profiles).`));
+    const brand = mergeBrand(profile, a.brand);
     const journal = readJournal(cfg.home);
     const items = learnedFor(journal, a.asset_type);
     return ok(
-      designBrief(a.asset_type, a.subject, a.brand, a.style, a.context, {
+      designBrief(a.asset_type, a.subject, brand, a.style, a.context, {
+        fonts: profile?.fonts,
         learned: learnedSentence(items),
         learnedItems: items,
         lessons: lessonsFor(a.asset_type),
+        reviewNotes: lessonsFor(a.asset_type, 4, "review"),
         preferredStyle: preferredStyleFor(journal, a.asset_type),
+        userFeedback: feedbackFor(readFeedback(cfg.home), a.asset_type, brand.name),
       }),
     );
   },
@@ -401,7 +450,8 @@ server.registerTool(
     inputSchema: {
       scores: z.record(z.string().max(30), z.number().min(0).max(5)).default({}),
       asset_type: z.enum(ASSET_TYPES).optional(),
-      file: z.string().max(500).optional().describe("The draft you scored, relative to the project, e.g. .ai-media/codex/banner.png"),
+      file: z.string().max(500).optional().describe("The draft you scored, relative to the project, e.g. .ai-media/codex/banner.png. It's also measured, and the measurements can cap your scores"),
+      planned_edges: z.array(z.enum(["top", "bottom", "left", "right"])).max(4).optional().describe("Edges left calm on purpose for text, so they don't count as empty bands"),
       style: z
         .object({ tier: z.enum(TIERS).optional(), look: z.enum(Object.keys(LOOKS) as [Look, ...Look[]]).optional() })
         .optional()
@@ -411,8 +461,34 @@ server.registerTool(
   async (a) => {
     try {
       if (!Object.keys(a.scores).length) return ok({ criteria: AUDIT_RUBRIC.map((r) => ({ id: r.id, ask: r.ask })), pass: "average 4 or more, nothing below 3" });
-      const result = auditScores(a.scores);
-      if (a.asset_type) record(cfg.home, { asset: a.asset_type, scores: a.scores, average: result.average, verdict: result.verdict, tier: a.style?.tier, look: a.style?.look });
+      // Measured checks back the self-scores: the model can't pass its own result past an empty band or a
+      // thumbnail that reads as one flat tone.
+      const scores = { ...a.scores };
+      const capped: string[] = [];
+      let measured: Record<string, unknown> | undefined;
+      if (a.file) {
+        const { file: abs } = resolveInput(a.file);
+        if (sniff(readHead(abs))?.mime.startsWith("image/")) {
+          const c = await compositionCheck(abs, { plannedEdges: a.planned_edges as Edge[] | undefined });
+          measured = { composition: c.verdict, bands: c.bands, thumbnailSpread: c.thumbnailSpread };
+          const cap = (id: string, max: number, why: string) => {
+            if ((scores[id] ?? 0) > max) {
+              scores[id] = max;
+              capped.push(`${id} capped at ${max}: ${why}`);
+            }
+          };
+          if (c.verdict === "empty-band") cap("hierarchy", 2, "an empty band at an edge (composition_check)");
+          if (c.thumbnailSpread < FLAT_THUMBNAIL) cap("thumbnail", 2, `the thumbnail is nearly one flat tone (spread ${c.thumbnailSpread})`);
+        }
+      }
+      const result = auditScores(scores);
+      // A measured failure gets the measured fix, not the generic one for that criterion.
+      const measuredFix: Record<string, string> = {
+        hierarchy: "Crop the empty band away (composition_check gives the crop, with target_aspect to keep the shape), or set the headline into it on purpose.",
+        thumbnail: "Raise contrast between the subject and the background, and enlarge the subject, so it still reads at 120 px wide.",
+      };
+      for (const fx of result.fixes) if (capped.some((c) => c.startsWith(fx.id + " ")) && measuredFix[fx.id]) fx.fix = measuredFix[fx.id]!;
+      if (a.asset_type) record(cfg.home, { asset: a.asset_type, scores, average: result.average, verdict: result.verdict, tier: a.style?.tier, look: a.style?.look });
       let marked: string | undefined;
       if (a.file) {
         const root = realpathSync(cfg.outputRoots[0]);
@@ -421,7 +497,129 @@ server.registerTool(
           marked = result.verdict === "ship" ? "shortlisted" : "rejected";
         }
       }
-      return ok({ ...result, ...(marked ? { draft: marked } : {}) });
+      return ok({ ...result, ...(measured ? { measured } : {}), ...(capped.length ? { capped } : {}), ...(marked ? { draft: marked } : {}) });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "brand_profiles",
+  {
+    title: "Register the brands you publish under",
+    description:
+      "Keeps a profile per brand so the right logo is never guessed: who publishes (a person posting as themselves, or a company), the real logo files for dark and light backgrounds, " +
+      "and optionally palette and fonts. design_brief takes brand_id and fills these in; compose places that brand's logo. action list, set or remove. Stored on this machine only.",
+    inputSchema: {
+      action: z.enum(["list", "set", "remove"]).default("list"),
+      id: z.string().max(40).optional().describe("Short id, e.g. sfa or nexaforge"),
+      name: z.string().max(80).optional(),
+      publisher: z.enum(["person", "company"]).optional(),
+      logo_dark: z.string().max(400).optional().describe("Absolute path of the logo made for dark backgrounds"),
+      logo_light: z.string().max(400).optional().describe("Absolute path of the logo made for light backgrounds"),
+      colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).max(6).optional(),
+      heading_font: z.string().max(60).optional(),
+      body_font: z.string().max(60).optional(),
+      google_fonts_url: z.string().url().max(400).optional(),
+      used_for: z.string().max(200).optional().describe("When to use it, e.g. 'his own LinkedIn posts and portfolio'"),
+    },
+  },
+  async (a) => {
+    try {
+      if (a.action === "list") return ok({ brands: readBrands(cfg.home) });
+      if (!a.id) throw new Error(`${a.action} needs an id.`);
+      if (a.action === "remove") return ok({ removed: removeBrand(cfg.home, a.id) });
+      if (!a.name || !a.publisher) throw new Error("set needs at least name and publisher.");
+      const saved = saveBrand(cfg.home, {
+        id: a.id,
+        name: a.name,
+        publisher: a.publisher,
+        ...(a.logo_dark || a.logo_light ? { logo: { ...(a.logo_dark ? { dark: resolve(a.logo_dark) } : {}), ...(a.logo_light ? { light: resolve(a.logo_light) } : {}) } } : {}),
+        ...(a.colors?.length ? { colors: a.colors } : {}),
+        ...(a.heading_font && a.body_font ? { fonts: { heading: a.heading_font, body: a.body_font, ...(a.google_fonts_url ? { googleFontsUrl: a.google_fonts_url } : {}) } } : {}),
+        ...(a.used_for ? { usedFor: a.used_for } : {}),
+      });
+      return ok({ saved });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "design_feedback",
+  {
+    title: "Remember a correction the user gave",
+    description:
+      "When the user says something about a result was wrong (a colour, a crop, an empty band, how the text looks, the wrong logo), call this right away with what was wrong and what they want instead. " +
+      "It's kept in a local journal on this machine, and every later design_brief applies it: image corrections go into the prompt as what to do, corrections about text and logos come back as compositing_rules. " +
+      "Set brand when the correction is about one brand (\"use the SFA mark on his personal posts\"), so it never leaks into another brand's work. " +
+      "action list shows what's stored, action forget removes one entry by its time. Pass file to mark that draft rejected.",
+    inputSchema: {
+      action: z.enum(["add", "list", "forget"]).default("add"),
+      asset_type: z.union([z.enum(ASSET_TYPES), z.literal("all")]).default("all"),
+      problem: z.string().max(300).optional().describe("What was wrong, in the user's terms, e.g. 'an empty navy band across the top'"),
+      instead: z.string().max(300).optional().describe("What they want instead, e.g. 'fill the frame and crop to the content'"),
+      brand: z.string().max(60).optional().describe("Only apply this to one brand's work, matched against brand.name in design_brief"),
+      applies_to: z.enum(["image", "compositing", "both"]).optional().describe("Leave out to let the server decide: anything about text, fonts or logos is compositing"),
+      time: z.string().max(40).optional().describe("forget: the time stamp of the entry, from list"),
+      file: z.string().max(500).optional().describe("add: the draft it was about, relative to the project"),
+    },
+  },
+  async (a) => {
+    try {
+      if (a.action === "list") return ok({ entries: readFeedback(cfg.home) });
+      if (a.action === "forget") {
+        if (!a.time) throw new Error("forget needs the entry's time, from action list.");
+        return ok({ removed: forgetFeedback(cfg.home, a.time) });
+      }
+      if (!a.problem?.trim() || !a.instead?.trim()) throw new Error("add needs both problem and instead.");
+      // Check the file before writing anything, so a bad path can't leave a half-recorded correction.
+      let abs: string | undefined;
+      let root: string | undefined;
+      if (a.file) {
+        root = realpathSync(cfg.outputRoots[0]);
+        abs = realpathSync(resolve(root, a.file));
+        if (!isInside(abs, join(root, ".ai-media"))) throw new Error("file must be a draft inside .ai-media.");
+      }
+      const e = recordFeedback(cfg.home, { asset: a.asset_type, problem: a.problem, instead: a.instead, scope: a.applies_to, brand: a.brand });
+      if (!e) throw new Error("Both problem and instead need some real text.");
+      const marked = abs && root ? markDraft(root, abs, { status: "rejected", note: `user: ${e.problem}` }) : false;
+      return ok({ recorded: e, ...(marked ? { draft: "rejected" } : {}), applies_from_now: feedbackFor(readFeedback(cfg.home), a.asset_type, a.brand) });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "composition_check",
+  {
+    title: "Find empty bands at the edges",
+    description:
+      "Measures an image for the empty band generated art often leaves at an edge (a plain sky or flat strip meant for text that never came) and returns how much of the frame it takes, " +
+      "plus a crop that removes it. Pass output_path to save the cropped version. Run it on a draft before compositing and on the final file before shipping.",
+    inputSchema: {
+      input_path: z.string().max(500),
+      output_path: z.string().max(500).optional().describe("If set and a band is found, the cropped image is saved here"),
+      target_aspect: z.string().max(20).optional().describe('Keep this shape when cropping, e.g. "4:5" for a LinkedIn feed post'),
+      planned_edges: z.array(z.enum(["top", "bottom", "left", "right"])).max(4).optional().describe("Edges you left calm on purpose for text you'll set there"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a) => {
+    try {
+      const { root, file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("composition_check works on images.");
+      const r = await compositionCheck(file, { aspect: parseAspect(a.target_aspect), plannedEdges: a.planned_edges as Edge[] | undefined });
+      let saved: string | undefined;
+      if (a.output_path && r.suggestedCrop) {
+        const out = resolveOutput({ roots: cfg.outputRoots, outputPath: a.output_path, provider: "composition", prompt: "", ext: extname(a.output_path) || ".png", overwrite: a.overwrite });
+        await applyCrop(file, out, r.suggestedCrop);
+        saved = relative(root, out);
+      }
+      return ok({ ...r, ...(saved ? { saved } : {}) });
     } catch (e) {
       return fail(e);
     }
@@ -612,10 +810,10 @@ server.registerTool(
             count: a.count as 1 | 2 | 3 | 4,
             maxCredits: 0,
             quality: a.quality,
-            project: readState(cfg).flowProject,
+            project: claimFlowProject(),
             onTick,
           });
-          writeState(cfg, { flowProject: r.project });
+          keepFlowProject(r.project);
           return { saved: r.files.map((buf, i) => save(buf, "flow", a.prompt, numbered(a.output_path, i), a.overwrite)), credits: r.credits, account: r.account };
         }
         const spec = specs.specs.find((s) => s.id === provider)!;
@@ -680,8 +878,8 @@ server.registerTool(
       if (!FLOW_VIDEO.includes(a.model)) throw new Error(`Flow video models: ${FLOW_VIDEO.join(", ")}`);
       const page = await browser.page(extra.signal, status);
       try {
-        const q = await flowQuote(page, { email: cfg.googleEmail, model: a.model as FlowModel, aspect: a.aspect, count: a.count as 1, project: readState(cfg).flowProject });
-        writeState(cfg, { flowProject: q.project });
+        const q = await flowQuote(page, { email: cfg.googleEmail, model: a.model as FlowModel, aspect: a.aspect, count: a.count as 1, project: claimFlowProject() });
+        keepFlowProject(q.project);
         return ok({ credits: q.credits, model: a.model, aspect: a.aspect, count: a.count, account: q.account, tier: q.tier, lowCredits: q.lowCredits });
       } finally {
         await page.close().catch(() => undefined);
@@ -742,10 +940,10 @@ server.registerTool(
           count: 1,
           maxCredits: a.max_credits,
           quality: a.quality,
-          project: readState(cfg).flowProject,
+          project: claimFlowProject(),
           onTick,
         });
-        writeState(cfg, { flowProject: r.project });
+        keepFlowProject(r.project);
         return ok({ saved: [save(r.files[0], "flow", a.prompt, a.output_path, a.overwrite)], credits: r.credits, account: r.account });
       } finally {
         await page.close().catch(() => undefined);
@@ -852,7 +1050,7 @@ server.registerTool(
     inputSchema: {
       input_path: z.string().max(500),
       presets: z.array(z.enum(Object.keys(SOCIAL_PRESETS) as [SocialPreset, ...SocialPreset[]])).optional().describe("Default: all"),
-      fit: z.enum(["cover", "contain", "pad"]).default("contain"),
+      fit: z.enum(["cover", "contain", "pad"]).default("cover").describe("cover (default) fills the frame; contain adds a blurred copy behind, which can look like padding; pad uses a solid colour"),
       pad_color: z.string().regex(/^(#?[0-9a-fA-F]{6}|black|white)$/).default("#0b1020"),
       output_dir: z.string().max(400).optional().describe("Default: <input folder>/<name>-sizes"),
       overwrite: z.boolean().default(false),
@@ -864,7 +1062,7 @@ server.registerTool(
       if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("social_sizes works on images.");
       const base = basename(file).replace(/\.\w+$/, "");
       const dir = a.output_dir ?? join(relative(root, dirname(file)), `${base}-sizes`);
-      const presets = a.presets ?? (Object.keys(SOCIAL_PRESETS) as SocialPreset[]);
+      const presets = a.presets ?? DEFAULT_PRESETS;
       const color = a.pad_color.startsWith("#") ? `0x${a.pad_color.slice(1)}` : /^[0-9a-fA-F]{6}$/.test(a.pad_color) ? `0x${a.pad_color}` : a.pad_color;
       // Validate every target before writing anything.
       const targets = new Map(presets.map((p) => [p, resolveOutput({ roots: cfg.outputRoots, outputPath: join(dir, `${p}${SOCIAL_PRESETS[p].ext}`), provider: "edit", prompt: "", ext: SOCIAL_PRESETS[p].ext, overwrite: a.overwrite })]));
@@ -956,6 +1154,157 @@ server.registerTool(
       if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("palette_extract works on images.");
       const colors = await dominantColors(file, a.count);
       return ok({ colors, css: cssVariables(colors) });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "deliver",
+  {
+    title: "Make the final file for a platform",
+    description:
+      "One step from a finished image to the file a platform wants: exact size (cropped to fill), JPEG at the lowest quality that still looks identical (SSIM), metadata stripped, " +
+      "under the platform's file-size limit, then checked for an empty band. Platforms: " +
+      Object.entries(PLATFORMS).map(([k, v]) => `${k} (${v.w}x${v.h}, ${v.note})`).join("; ") + ".",
+    inputSchema: {
+      input_path: z.string().max(500),
+      platform: z.enum(Object.keys(PLATFORMS) as [Platform, ...Platform[]]),
+      output_path: z.string().max(500).optional().describe("Default: <input folder>/<name>-<platform>.jpg"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const { root, file } = resolveInput(a.input_path);
+      if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error("deliver works on images.");
+      const spec = PLATFORMS[a.platform];
+      const def = join(relative(root, dirname(file)), `${basename(file).replace(/\.\w+$/, "")}-${a.platform}.jpg`);
+      const out = resolveOutput({ roots: cfg.outputRoots, outputPath: a.output_path ?? def, provider: "deliver", prompt: "", ext: ".jpg", overwrite: a.overwrite });
+      mkdirSync(dirname(out), { recursive: true });
+      const p = progress(extra, `deliver ${a.platform}`);
+      try {
+        const r = await encodeAtSize(file, out, spec.w, spec.h, "cover", { maxBytes: spec.maxBytes });
+        const c = await compositionCheck(out);
+        markDraft(root, file, { status: "used", final: relative(root, out).split("\\").join("/") });
+        return ok({
+          file: relative(root, out),
+          platform: a.platform,
+          width: r.width,
+          height: r.height,
+          bytes: r.bytes,
+          withinLimit: r.bytes <= spec.maxBytes,
+          ssim: r.ssim,
+          setting: r.setting,
+          composition: { verdict: c.verdict, bands: c.bands, note: c.note },
+          note: spec.note,
+        });
+      } finally {
+        p.done();
+      }
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "compose",
+  {
+    title: "Set the real headline and logo over generated art",
+    description:
+      "Renders a headline (and an optional sub line) and a registered brand's real logo over a generated image, the careful way every time: the calmest corner is measured and gets the text, " +
+      "the logo takes the calmest bottom corner left, text colour and a soft scrim are chosen for at least 4.5:1 contrast, the brand's display font (or the brief's) is used, one colour, no glow, no eyebrow label. " +
+      "A logo on its own dark tile gets a feathered edge so it doesn't look boxed. Saves a PNG; run deliver on it for the platform. Opens a tab in the server's browser to render.",
+    inputSchema: {
+      input_path: z.string().max(500).describe("The generated art, relative to the project"),
+      headline: z.string().min(1).max(80),
+      subline: z.string().max(140).optional(),
+      brand_id: z.string().max(40).optional().describe("A brand from brand_profiles; its logo and fonts are used. Leave out for text only"),
+      platform: z.enum(Object.keys(PLATFORMS) as [Platform, ...Platform[]]).optional().describe("Crop the art to this platform's size first, so the text margins are right in the final file"),
+      text_corner: z.enum(["top-left", "top-right", "bottom-left", "bottom-right"]).optional().describe("Default: the calmest corner, measured"),
+      logo_corner: z.enum(["top-left", "top-right", "bottom-left", "bottom-right"]).optional(),
+      heading_font: z.string().max(60).optional().describe("Default: the brand's, else Space Grotesk"),
+      body_font: z.string().max(60).optional(),
+      output_path: z.string().max(500).optional().describe("Default: <input folder>/<name>-composed.png"),
+      overwrite: z.boolean().default(false),
+    },
+  },
+  async (a, extra: Extra) => {
+    try {
+      const { root, file: source } = resolveInput(a.input_path);
+      if (!sniff(readHead(source))?.mime.startsWith("image/")) throw new Error("compose works on images.");
+      // With a platform, compose at the final size: cropping after setting text would cut into its margins.
+      let file = source;
+      if (a.platform) {
+        const spec = PLATFORMS[a.platform];
+        file = join(mkdtempSync(join(tmpdir(), "noapi-compose-")), "art.png");
+        await encodeAtSize(source, file, spec.w, spec.h, "cover", { png: true });
+      }
+      const kind = sniff(readHead(file))!;
+      const info = await probe(file);
+      if (!info.width || !info.height) throw new Error("Could not read the image size.");
+      if (info.width * info.height > 40_000_000) throw new Error("That image is too large to compose; resize it first.");
+      const brand = a.brand_id ? getBrand(cfg.home, a.brand_id) : undefined;
+      if (a.brand_id && !brand) throw new Error(`No brand "${a.brand_id}". Registered: ${readBrands(cfg.home).map((b) => b.id).join(", ") || "none yet"}.`);
+      const g = await sampleGrey(file);
+      const stats = cornerStats(g.lum, g.w, g.h);
+      const place = placeTextAndLogo(stats, a.text_corner as Corner | undefined, a.logo_corner as Corner | undefined);
+      const region = stats.find((s) => s.corner === place.text)!;
+      const style = textStyleFor(region);
+      const logoRegion = stats.find((s) => s.corner === place.logo)!;
+      const logoFile = brand?.logo ? (logoRegion.mean < 140 ? brand.logo.dark ?? brand.logo.light : brand.logo.light ?? brand.logo.dark) : undefined;
+      let logo: { dataUrl: string; corner: Corner; tile: boolean } | undefined;
+      if (logoFile) {
+        const head = readHead(logoFile);
+        const lk = sniff(head);
+        if (!lk?.mime.startsWith("image/") || statSync(logoFile).size > 8 * 1024 * 1024) throw new Error(`The brand's logo file isn't a usable image: ${logoFile}`);
+        logo = { dataUrl: `data:${lk.mime};base64,${readFileSync(logoFile).toString("base64")}`, corner: place.logo, tile: await logoHasTile(logoFile) };
+      }
+      const fonts = brand?.fonts;
+      const html = composeHtml({
+        width: info.width,
+        height: info.height,
+        artDataUrl: `data:${kind.mime};base64,${readFileSync(file).toString("base64")}`,
+        headline: a.headline,
+        subline: a.subline,
+        heading: a.heading_font ?? fonts?.heading ?? "Space Grotesk",
+        body: a.body_font ?? fonts?.body ?? "DM Sans",
+        googleFontsUrl: a.heading_font || a.body_font
+          ? `https://fonts.googleapis.com/css2?family=${encodeURIComponent(a.heading_font ?? "Space Grotesk")}:wght@700&family=${encodeURIComponent(a.body_font ?? "DM Sans")}:wght@500&display=swap`
+          : fonts?.googleFontsUrl ?? "https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Space+Grotesk:wght@700&display=swap",
+        text: place.text,
+        logo,
+        style,
+        textWidth: calmWidth(g.lum, g.w, g.h, place.text),
+      });
+      const def = join(relative(root, dirname(source)), `${basename(source).replace(/\.\w+$/, "")}-composed${a.platform ? `-${a.platform}` : ""}.png`);
+      const out = resolveOutput({ roots: cfg.outputRoots, outputPath: a.output_path ?? def, provider: "compose", prompt: "", ext: ".png", overwrite: a.overwrite });
+      mkdirSync(dirname(out), { recursive: true });
+      return await job(extra, "compose", "compose", async (_t, status) => {
+        const page = await browser.page(extra.signal, status);
+        try {
+          await page.setViewportSize({ width: info.width!, height: info.height! });
+          await page.setContent(html, { waitUntil: "load", timeout: 30_000 });
+          await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+          const headingFont = a.heading_font ?? fonts?.heading ?? "Space Grotesk";
+          const fontLoaded = await page.evaluate((f) => document.fonts.check(`700 48px "${f}"`), headingFont).catch(() => false);
+          const png = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: info.width!, height: info.height! } });
+          writeFileSync(out, png);
+          return ok({
+            file: relative(root, out),
+            placement: place,
+            contrast: style.contrast,
+            textColor: style.color,
+            logo: logoFile ? { file: logoFile, feathered: logo?.tile ?? false } : "none (pass brand_id to add one)",
+            headingFont: fontLoaded ? headingFont : `${headingFont} didn't load (offline?); a system sans was used`,
+            next: "Look at it, run design_audit with this file, then deliver it for the platform.",
+          });
+        } finally {
+          await page.close().catch(() => undefined);
+        }
+      });
     } catch (e) {
       return fail(e);
     }
@@ -1076,14 +1425,15 @@ server.registerTool(
   {
     title: "Shrink an image or video for the web without visible loss",
     description:
-      "Images to WebP, videos to H.264 with faststart. Raises quality until SSIM (similarity to the original) reaches the target, " +
+      "Images to WebP by default, or JPEG/PNG with format (or a .jpg/.png output_path), for places like LinkedIn post uploads that don't take WebP. Videos to H.264 with faststart. Raises quality until SSIM (similarity to the original) reaches the target, " +
       "so the size drops but the picture does not visibly change. The original is kept untouched. " +
       "Behaviour notice: by default the output has embedded metadata stripped (EXIF, XMP, C2PA content credentials, text chunks), " +
       "like most web image optimizers; the result lists what was removed. Pass keep_metadata: true to keep what re-encoding can carry. " +
       "Invisible watermarks such as SynthID are never touched.",
     inputSchema: {
       input_path: z.string().max(500),
-      output_path: z.string().max(500).optional().describe("Default: same folder, .webp for images, -web.mp4 for videos"),
+      output_path: z.string().max(500).optional().describe("Default: same folder, .webp for images (or the chosen format), -web.mp4 for videos"),
+      format: z.enum(["webp", "jpg", "png"]).optional().describe("Image output format. Default: from output_path's extension, else webp"),
       max_width: z.number().int().min(64).max(7680).optional(),
       keep_audio: z.boolean().default(false),
       keep_metadata: z.boolean().default(false).describe("true: don't strip embedded metadata from the output (EXIF/XMP/C2PA). Default follows config strip_ai_metadata (on)."),
@@ -1100,13 +1450,18 @@ server.registerTool(
       const kind = sniff(readHead(input));
       if (!kind) throw new Error("Input is not a real image or video file.");
       const isVideo = kind.mime.startsWith("video/");
-      const defOut = isVideo ? input.replace(/\.\w+$/, "-web.mp4") : input.replace(/\.\w+$/, ".webp");
+      const fromPath = formatFromPath(a.output_path);
+      if (a.format && fromPath && a.format !== fromPath) throw new Error(`format is ${a.format} but output_path ends in .${fromPath}. Make them agree.`);
+      const format: ImageFormat = a.format ?? fromPath ?? "webp";
+      const imgExt = `.${format}`;
+      // Same extension as the input: add -web so the original is never overwritten.
+      const defOut = isVideo ? input.replace(/\.\w+$/, "-web.mp4") : input.replace(/\.\w+$/, extname(input).toLowerCase() === imgExt ? `-web${imgExt}` : imgExt);
       const out = resolveOutput({
         roots: cfg.outputRoots,
         outputPath: a.output_path ?? relative(root, defOut),
         provider: "optimize",
         prompt: "",
-        ext: isVideo ? ".mp4" : ".webp",
+        ext: isVideo ? ".mp4" : imgExt,
         overwrite: a.overwrite,
       });
       mkdirSync(dirname(out), { recursive: true });
@@ -1115,7 +1470,7 @@ server.registerTool(
         const strip = a.keep_metadata ? false : cfg.stripAiMetadata;
         const r = isVideo
           ? await optimizeVideo(input, out, { maxWidth: a.max_width, keepAudio: a.keep_audio, strip })
-          : await optimizeImage(input, out, a.max_width, undefined, strip);
+          : await optimizeImage(input, out, a.max_width, undefined, strip, format);
         const notice = firstTimeNotice();
         markDraft(root, input, { status: "used", final: relative(root, r.output).split("\\").join("/") });
         return ok({ ...r, output: relative(root, r.output), ...(notice ? { notice } : {}) });

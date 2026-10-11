@@ -13,7 +13,7 @@
 **no-api-media-mcp is an open source MCP server (Apache-2.0, Node 22+) that lets Claude Code, Cursor, Codex and other MCP clients make images and videos for your projects with the AI subscriptions you already pay for.**<br>
 **No API keys. No second bill.** Uses your own ChatGPT, Google AI Pro, Higgsfield and Grok accounts.
 
-[Features](#features) • [Quick start](#quick-start) • [Connect accounts](#connect-your-accounts) • [Installation](#installation) • [Tools](#tools) • [CLI commands](#cli-commands) • [Troubleshooting](#troubleshooting)
+[Intro video](#watch-the-72-second-intro) • [Features](#features) • [Quick start](#quick-start) • [Connect accounts](#connect-your-accounts) • [Installation](#installation) • [Tools](#tools) • [CLI commands](#cli-commands) • [Troubleshooting](#troubleshooting)
 
 </div>
 
@@ -25,16 +25,7 @@
 
 https://github.com/user-attachments/assets/c96b3ad1-4795-4c54-91e7-95d3cd4627d3
 
-A short narrated tour, 1080p: the problem it solves, the server making a real image from a prompt, and how to install it. The video itself was made with our own intro video tool and its synthetic NexaForge narrator. [Download the MP4](docs/video/no-api-media-mcp-intro.mp4).
-
-## Behaviour notice: metadata is stripped from optimized files
-
-Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes: EXIF, XMP, text chunks and **C2PA content credentials** (the signed manifest that ChatGPT, Codex, Google Flow, Gemini and Veo embed, and that platforms such as LinkedIn turn into a "Content credentials" badge). This is what most web image optimizers and CDNs do, and in fact 0.2 already dropped it as a silent side effect of re-encoding. 0.3 makes it explicit: every result lists what was removed, and you can turn it off.
-
-- **Your originals are never touched.** Generated files in `.ai-media/` keep their manifests; only the optimized copy is stripped.
-- **Turn it off** in any of three ways: `keep_metadata: true` on a call, the environment variable `NO_API_MEDIA_KEEP_METADATA=1`, or `node dist/src/index.js config set strip_ai_metadata false`.
-- **What it does not do.** This removes embedded *metadata* only. It does **not** remove invisible watermarks such as Google SynthID, which live in the pixels, so platforms and detectors may still identify the AI origin. It is not a way to pass AI images off as real photographs. You are responsible for the rules of the platforms you post to and for any disclosure requirements that apply to you.
-- A signed C2PA manifest cannot survive re-encoding anyway (it is bound to the original bytes), so with `keep_metadata: true` the result is honest about what the encoder lost rather than copying an invalid manifest.
+A short narrated tour, 1080p: the problem it solves, the server making a real image from a prompt, and how to install it. The video itself was made with our own intro video tool and its synthetic NexaForge narrator. [Download the MP4 (9.4 MB)](https://github.com/farhan6667/no-api-media-mcp/releases/download/v1.3.0/no-api-media-mcp-intro.mp4).
 
 ## Features
 
@@ -458,6 +449,15 @@ Put a file in `~/.no-api-media/providers/<id>.json`. Start from [`examples/provi
 
 - Your password never touches this code, there is no network port, and the server can't write outside your project. The full threat model is in [SECURITY.md](SECURITY.md).
 - Web providers drive the consumer sites the way you would by hand. OpenAI's, Google's and xAI's terms restrict automated use of those sites, so **using them is your call and your account's risk**. The server works at human pace, stops at captchas and sign-in pages, and doesn't hide that it is automation. Official CLIs (Codex, Higgsfield) are the safer routes.
+
+## Behaviour notice: metadata is stripped from optimized files
+
+Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes: EXIF, XMP, text chunks and **C2PA content credentials** (the signed manifest that ChatGPT, Codex, Google Flow, Gemini and Veo embed, and that platforms such as LinkedIn turn into a "Content credentials" badge). This is what most web image optimizers and CDNs do, and in fact 0.2 already dropped it as a silent side effect of re-encoding. 0.3 makes it explicit: every result lists what was removed, and you can turn it off.
+
+- **Your originals are never touched.** Generated files in `.ai-media/` keep their manifests; only the optimized copy is stripped.
+- **Turn it off** in any of three ways: `keep_metadata: true` on a call, the environment variable `NO_API_MEDIA_KEEP_METADATA=1`, or `node dist/src/index.js config set strip_ai_metadata false`.
+- **What it does not do.** This removes embedded *metadata* only. It does **not** remove invisible watermarks such as Google SynthID, which live in the pixels, so platforms and detectors may still identify the AI origin. It is not a way to pass AI images off as real photographs. You are responsible for the rules of the platforms you post to and for any disclosure requirements that apply to you.
+- A signed C2PA manifest cannot survive re-encoding anyway (it is bound to the original bytes), so with `keep_metadata: true` the result is honest about what the encoder lost rather than copying an invalid manifest.
 
 ## Frequently asked questions
 

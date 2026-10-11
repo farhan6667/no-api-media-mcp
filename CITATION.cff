@@ -11,8 +11,8 @@ authors:
 repository-code: "https://github.com/farhan6667/no-api-media-mcp"
 url: "https://nexaforge.eu.cc/"
 license: Apache-2.0
-version: "0.4.0"
-date-released: "2026-10-09"
+version: "1.0.0"
+date-released: "2026-10-11"
 keywords:
   - mcp
   - model context protocol

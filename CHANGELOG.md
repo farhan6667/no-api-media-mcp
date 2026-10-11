@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0 (2026-10-11)
+
+The first stable release. Nothing new is bolted on here: 1.0.0 is the 0.11.0 feature set, now treated as
+stable, which means the tool names, their inputs and the config keys won't change in a breaking way
+without a new major version. What that covers, in short:
+
+- Images and videos from the plans you already pay for (Codex, ChatGPT, Google Flow and Gemini,
+  Higgsfield, and JSON-defined sites), with an automatic fallback chain when a provider breaks.
+- Art direction built in: `design_brief`, the eye-catch `design_audit`, audience personas, curated
+  palettes and font pairings, and asset types from logos to 3D environment maps.
+- A local media studio: `media_optimize`, `social_sizes`, `contact_sheet`, `palette_extract`,
+  `loop_check`, `video_edit`, background removal.
+- It learns from its own audits and remembers what shipped, all in local journals that never leave
+  the machine.
+- Several sessions at once through a fair queue, or side by side with the opt-in `share_browser`.
+- Notify-only update checks, with opt-in auto-install.
+
+
 ## 0.11.0 (2026-10-11)
 
 - **Several Claude sessions at once, without the "already open" failure.** Every session runs its own copy

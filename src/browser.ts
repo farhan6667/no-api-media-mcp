@@ -11,20 +11,23 @@ import { assertPublicHttps, log } from "./safety.js";
 /**
  * The server never sees a password. The user signs in once, by hand, in a dedicated Chrome profile
  * that lives in ~/.no-api-media/chrome-profile (outside every repo). Later the server reopens that
- * same profile. By default Playwright talks to Chrome over a pipe, not a TCP debugging port, so no other
- * process on the machine can attach to the logged-in browser.
+ * same profile. With share_browser off, Playwright talks to Chrome over a pipe only, not a TCP debugging
+ * port, so no other process on the machine can attach to the logged-in browser.
  *
  * Several Claude sessions can have this server running at once, all pointing at that one profile, and
  * Chrome lets only one process hold a profile at a time. Two ways to handle that:
  *
- * - Default (share_browser off): a second session joins a small machine-wide queue and waits its turn,
- *   reporting its place in the queue and, once there's enough history, an estimate based on how long
- *   recent browser jobs actually took. The pipe-only guarantee above stays true.
- * - share_browser on: the browser is launched with a loopback-only devtools port (Chrome writes it to
+ * - share_browser on (the default, since this runs on the user's own machine): the browser is launched
+ *   with a loopback-only devtools port (Chrome writes it to
  *   DevToolsActivePort in the profile folder) and a second session joins that same browser over CDP as
  *   another tab, so both jobs run side by side. The cost: while the browser is open, any local process
- *   could attach to that port. A session that joined this way never shuts the shared browser down; only
- *   the one that launched it does, after it goes idle.
+ *   could attach to that port, which is why it's worth turning off on a shared machine. A session that
+ *   joined this way never shuts the shared browser down; only the one that launched it does, after it
+ *   goes idle.
+ * - share_browser off: a second session joins a small machine-wide queue and waits its turn, reporting
+ *   its place and, once there's enough history, an estimate based on how long recent browser jobs
+ *   actually took. The pipe-only guarantee above holds. The queue is also the fallback when sharing is on
+ *   but the other browser can't be joined.
  */
 const QUEUE_POLL_MS = 2500;
 const STATUS_EVERY_MS = 10_000;

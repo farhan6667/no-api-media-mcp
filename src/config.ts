@@ -43,8 +43,9 @@ export interface Config {
   autoCleanup: boolean;
   /**
    * Let several sessions of this server share one signed-in browser as separate tabs, so their jobs run
-   * side by side. Default false: it opens a loopback-only Chrome devtools port while the browser is open,
-   * which any other local process could attach to. Off means a second session waits in a queue instead.
+   * side by side. Default true, because this runs on the user's own machine: it opens a loopback-only
+   * Chrome devtools port while the browser is open, which another local process could attach to, so turn
+   * it off on a shared machine. Off means a second session waits in a queue instead.
    */
   shareBrowser: boolean;
   /** Check GitHub for a newer release. Default true. Off via NOAPI_CHECK_UPDATES=0. */
@@ -96,14 +97,14 @@ export function resolveAutoCleanup(saved: Record<string, unknown>, environment: 
   return true;
 }
 
-/** Precedence: environment NOAPI_SHARE_BROWSER, then config.json share_browser, then default (off). */
+/** Precedence: environment NOAPI_SHARE_BROWSER, then config.json share_browser, then default (on). */
 export function resolveShareBrowser(saved: Record<string, unknown>, environment: NodeJS.ProcessEnv = process.env): boolean {
   const e = environment.NOAPI_SHARE_BROWSER;
   if (e !== undefined && e !== "") return !(e === "0" || e.toLowerCase() === "false");
   const v = saved.share_browser;
   if (typeof v === "boolean") return v;
-  if (typeof v === "string") return v.toLowerCase() === "true";
-  return false;
+  if (typeof v === "string") return v.toLowerCase() !== "false";
+  return true;
 }
 
 function flag(name: string, def: boolean): boolean {

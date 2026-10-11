@@ -14,7 +14,10 @@ without a new major version. What that covers, in short:
   `loop_check`, `video_edit`, background removal.
 - It learns from its own audits and remembers what shipped, all in local journals that never leave
   the machine.
-- Several sessions at once through a fair queue, or side by side with the opt-in `share_browser`.
+- Several sessions at once, side by side as separate tabs. **Changed from 0.11.0: `share_browser` is
+  now on by default**, because the server is meant to run on your own machine. It opens a loopback-only
+  devtools port while the browser is open; on a shared machine turn it off with
+  `no-api-media-mcp config set share_browser false`, and a second session waits in a fair queue instead.
 - Notify-only update checks, with opt-in auto-install.
 
 

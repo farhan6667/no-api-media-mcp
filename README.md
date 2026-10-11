@@ -23,9 +23,9 @@
 
 ## Watch the 72 second intro
 
-<p align="center"><a href="https://github.com/farhan6667/no-api-media-mcp/blob/main/docs/video/no-api-media-mcp-intro.mp4"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/intro-poster.webp" width="720" alt="Intro video for no-api-media-mcp: why pay again for an API key when you already pay for ChatGPT or Google AI Pro, how the server makes images and videos from Claude Code, Cursor and Codex, and the quick start. Click to play."></a></p>
+https://github.com/user-attachments/assets/c96b3ad1-4795-4c54-91e7-95d3cd4627d3
 
-A short narrated tour: the problem it solves, the server making a real image from a prompt, and how to install it. The video itself was made with our own intro video tool and its synthetic NexaForge narrator.
+A short narrated tour, 1080p: the problem it solves, the server making a real image from a prompt, and how to install it. The video itself was made with our own intro video tool and its synthetic NexaForge narrator. [Download the MP4](docs/video/no-api-media-mcp-intro.mp4).
 
 ## Behaviour notice: metadata is stripped from optimized files
 

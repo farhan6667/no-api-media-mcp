@@ -19,7 +19,7 @@
 
 ---
 
-<p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/workflow.webp" width="100%" alt="Overview: your AI client (Claude Code, Cursor, Windsurf) talks to the no-api-media-mcp server, which uses your AI subscriptions (ChatGPT, Google AI Pro / Flow, Gemini, Higgsfield, Grok) and saves generated images and videos in your project. Features: project-aware generation, images and videos, designer-grade prompts, auto save to project, credit limits, flexible providers"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/workflow.webp" width="100%" alt="Overview: your AI assistant (Claude Code, Cursor, Codex, Windsurf or any MCP client) talks to no-api-media-mcp, which uses the AI plans you already pay for (ChatGPT via Codex, Google Flow, Gemini, Higgsfield, Grok) and puts finished, checked media in your project"></p>
 
 ## Behaviour notice: metadata is stripped from optimized files
 
@@ -42,11 +42,22 @@ Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes
 - **Credit-safe**: shows the cost first, hard `max_credits` cap, one job at a time
 - **Add any site with a small JSON file**, no code
 
-## What's new in 0.2
+## What's new in 1.x
 
-<p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/whats-new-0.2.webp" width="100%" alt="What's new in 0.2: background removal, video editing (trim, reframe 9:16, subtitles, GIF) and social sizes (Instagram, LinkedIn, YouTube, Story). Runs locally, no API keys. Made with this MCP"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/whats-new-1.webp" width="100%" alt="What's new in 1.x: compose sets your real headline and logo, deliver makes the exact file for each platform, measured audits, it remembers your corrections, several sessions in one browser, prompts that never contradict"></p>
 
-<sub>This image was made by no-api-media-mcp itself: `design_brief` with the `neon-glass` look, generated in Google Flow on an AI Pro plan, 0 credits.</sub>
+<sub>Made the way the server now recommends: the background came from `design_brief` and `image_generate` (Codex on a ChatGPT plan), every word and logo was set on top in HTML instead of being drawn by the model, then `composition_check` and `media_optimize` checked and shrank it. None of the graphics on this page show another company's logo.</sub>
+
+| Tool | What it does |
+|---|---|
+| `compose` | Sets your real headline and a registered brand's logo over generated art: measured placement, at least 4.5:1 contrast, the brand's fonts, no glow |
+| `deliver` | The exact file a platform wants (linkedin-feed, instagram-story, x-post, github-social and more): size, smallest JPEG that still looks identical, under the size limit |
+| `brand_profiles` | The brands you publish under, with who publishes (a person or a company) and their real logo files, so the right mark is never guessed |
+| `design_feedback` | Remembers what you said was wrong and applies it to every later brief, per brand if you like |
+| `composition_check` | Finds empty bands at the edges and crops them while keeping your target shape |
+| `browser_done` | Closes the browser when the work is finished, never while another session still uses it |
+
+### The media studio (since 0.2)
 
 | Tool | What it does |
 |---|---|
@@ -124,8 +135,8 @@ Both of these came out of the prompts above, through Google Flow on an AI Pro pl
 ### At a glance
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/product-overview.webp" width="49%" alt="Product overview: generate images and videos using the AI accounts you already have, works with ChatGPT via Codex, Google Flow, Gemini, Higgsfield and Grok, and how it works from your AI client to files in your project">
-<img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/poster.webp" width="42%" alt="Make images and videos with the AI plan you already pay for. No API keys, no second bill. Works in Claude Code, Cursor, Codex and any MCP client">
+<img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/product-overview.webp" width="49%" alt="How it works in six steps: you ask in plain words, it reads your project, writes a designer's brief, your AI plan makes the art, it checks every draft, and it delivers the final file">
+<img src="https://raw.githubusercontent.com/farhan6667/no-api-media-mcp/main/docs/img/poster.webp" width="42%" alt="Make images and videos with the AI plan you already pay for. No API keys, no second bill. Works with ChatGPT via Codex, Google Flow, Gemini, Higgsfield and Grok, in Claude Code, Cursor, Codex, Windsurf and any MCP client">
 </p>
 
 ## It designs for who's actually looking

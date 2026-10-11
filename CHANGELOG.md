@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 (2026-10-11)
+
+- **The README graphics are rebuilt for 1.x.** The overview, the "What's new" image, the poster and the
+  how-it-works sheet now show the current features: compose, deliver, measured audits, corrections that
+  stick, several sessions at once.
+- **No other company's logo on any of them.** The earlier graphics had image-model-drawn marks for the
+  providers and editors this works with. Those are trademarks and don't belong in the project's own
+  images; every name is now plain text, and the only marks are the project's own, NexaForge's and SFA's.
+- Made the way the server now recommends, as a check of its own advice: background art from
+  `design_brief` and `image_generate`, all words and logos set in HTML on top, then `composition_check`
+  (all four clean) and `media_optimize` (about 80% smaller at SSIM 0.985 or better).
+- No code changes since 1.2.0.
+
+
 ## 1.2.0 (2026-10-11)
 
 - **The browser closes when the work is done, not before.** New `browser_done` tool: the assistant calls

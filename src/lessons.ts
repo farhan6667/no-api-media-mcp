@@ -25,6 +25,7 @@ export const LESSONS: Lesson[] = [
   { rule: "When a headline will go on the image, ask for a calm low-detail zone on that side and keep the bright detail in the middle band.", assets: ["hero", "banner", "social-post", "poster"], seen: 2, to: "prompt" },
   { rule: "Never leave an empty band or blank sky for text that won't be added. Fill the frame, then run composition_check and crop what is still empty.", assets: ["banner", "social-post", "poster", "hero"], seen: 2, to: "prompt" },
   { rule: "A feed image with no words on it is a social-post with targetAspect set, not a banner. Banners are for text laid over them.", assets: ["banner", "social-post"], seen: 1, to: "review" },
+  { rule: "Give a profile banner a real headline: the name and one short role line, set in HTML. No icon row, stock person or hooded figure.", assets: ["banner"], seen: 1, to: "review" },
   { rule: "A single big centred object reads as stock. Ask for an abstract backdrop with open space and let the real brand mark be the focal point.", assets: ["hero", "banner", "poster", "social-post"], seen: 2, to: "prompt" },
   { rule: "A black-background logo on busy art washes out and shows a box. Put it on a dark glass plate or a feathered mask.", assets: VISUAL, seen: 2, to: "review" },
   { rule: "Use the real brand logo file in a corner for consistency. Check its size and transparency first, never redraw it.", assets: VISUAL, seen: 2, to: "review" },

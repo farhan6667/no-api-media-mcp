@@ -36,6 +36,7 @@ Honest limits: the work was done before these MCP tools existed in their current
 | 26 | Remove AI provenance metadata only when the user asks, and say so openly. In one session a platform showed an AI label from embedded provenance data (C2PA), and re-encoding the pixels into a fresh file dropped it. Invisible pixel watermarks are not removed this way. | The user asked to strip metadata before posting. Whether to do this by default is the maintainer's decision. | social post | 1 |
 | 27 | Write alt text for every image in a social post, and keep the order the user approved (hero first). | Alt text was added to each of 8 images by hand. | social post | 1 |
 | 28 | Fix one problem, then look again. Do not stack five fixes and ship. | The user said to find the bug before fixing it, after a change that did not fix what they pointed at. | all | 2 |
+| 29 | For a personal or company profile banner (LinkedIn, GitHub, X), compose a short real headline on top by default: the name and one line position, rendered crisp via HTML, not left blank. A background alone, even one that audits clean, reads as unfinished to the client, who is comparing it against a text heavy banner they got elsewhere. Keep it to one headline and at most one subtitle line. Do not add a row of skill icons or a stock photo of a person, and never a hooded figure or a generic red dot world threat map: those are the most recognised cliches in security marketing art and fail the "not template" criterion even when everything else about the render is clean. | A client compared a deliberately textless, logo only banner against three text heavy ones they generated elsewhere and judged the textless one unfinished, even though it had the higher composition score. | banner | 1 |
 
 ## Provider notes
 
@@ -53,7 +54,7 @@ Honest limits: the work was done before these MCP tools existed in their current
 
 1. Read the project: palette, fonts, existing art, where assets live, and the exact slot (file name, size, ratio, where the headline goes).
 2. Write the plan as one short list and get a yes before spending credits.
-3. Generate art only, with no text and no logo. Use exact hex colours, a calm zone for the headline, and the subject in the centre.
+3. Generate art only, with no text and no logo. Use exact hex colours, a calm zone for the headline, and the subject in the centre. For a personal or company profile banner, plan for a real headline (name plus one line position) to land in that calm zone at step 6, do not skip straight to a textless final (lesson 29).
 4. Audit each image as a lead designer. Zoom into screens and documents. Regenerate only what fails.
 5. If the art has a tinted background, cut it out so it blends with the page.
 6. Compose with HTML: real text, real logo, real screenshots, glass and glow effects. Render at 2x and downscale with a good filter.

@@ -60,7 +60,7 @@ describe("domain cues and third-party names", () => {
     assert.equal(b.eye_catch_audit.criteria.length, AUDIT_RUBRIC.length);
     assert.equal(b.domain_cues?.field, "cyber security");
     assert.ok(b.third_party);
-    assert.match(b.directions[0].prompt, /Make the field obvious without words/);
+    assert.match(b.directions[0].prompt, /at most one of these quiet cues/);
     assert.match(b.directions[0].prompt, /independent project/);
   });
 });
@@ -133,6 +133,16 @@ describe("preferred style from the learning journal", () => {
     assert.equal(b.preferred_style?.applied, true);
   });
 
+  it("keeps a remembered look out when the caller asked for a different tier", () => {
+    const b = designBrief("banner", "x", {}, { tier: "minimal" }, {}, { preferredStyle: { tier: "premium", look: "neon-glass", shipped: 5 } });
+    assert.equal(b.style.look, undefined);
+  });
+
+  it("still applies a remembered look when the caller's tier matches it", () => {
+    const b = designBrief("banner", "x", {}, { tier: "premium" }, {}, { preferredStyle: { tier: "premium", look: "neon-glass", shipped: 5 } });
+    assert.equal(b.style.look, "neon-glass");
+  });
+
   it("ignores a garbled tier or look name rather than crashing", () => {
     const b = designBrief("hero", "x", {}, {}, {}, { preferredStyle: { tier: "not-a-real-tier", shipped: 4 } });
     assert.equal(b.style.tier, "premium");
@@ -151,5 +161,27 @@ describe("needs_from_user", () => {
   });
   it("a target crop counts as knowing where it goes, and project.about as knowing the story", () => {
     assert.equal(missingContext({ targetAspect: "1200:627", about: "A security tool." }), undefined);
+  });
+});
+
+describe("explicit look and field cues", () => {
+  const subject = "a SIEM detection engineering scene for a cyber security analyst";
+  it("lets an explicit look keep its own colours instead of the field palette", () => {
+    assert.match(JSON.stringify(designBrief("banner", subject, {})), /#A45CFF/);
+    assert.doesNotMatch(JSON.stringify(designBrief("banner", subject, {}, { look: "cyber-matrix" })), /#A45CFF/);
+  });
+
+  it("asks for at most one field cue, not the whole list", () => {
+    const b = designBrief("banner", subject, {}, {}, { project: "SFA", about: "cyber security and threat detection" });
+    const text = JSON.stringify(b);
+    assert.match(text, /at most one of these quiet cues/);
+    assert.doesNotMatch(text, /Make the field obvious without words/);
+  });
+
+  it("drops the tier's glossy art direction when an explicit flat look is chosen", () => {
+    const text = JSON.stringify(designBrief("banner", subject, {}, { tier: "premium", look: "cyber-matrix" }));
+    assert.doesNotMatch(text, /Apple-keynote level finish/);
+    assert.doesNotMatch(text, /nothing cheap, flat or clip-art/);
+    assert.match(text, /cyber-matrix look/);
   });
 });

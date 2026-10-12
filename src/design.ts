@@ -482,6 +482,8 @@ const ARTICLE: Record<AssetType, string> = {
   poster: "a poster",
 };
 
+const LOOK_QUALITY = "It has to look premium and high-end, like a launch visual from a top design studio: deliberate, crisp detail, nothing cheap or clip-art.";
+
 const QUALITY: Record<NonNullable<Style["tier"]>, string> = {
   luxury: "It has to look luxurious and expensive, like a campaign from a high-end fashion or jewellery house: rich, calm, refined, every detail deliberate.",
   premium: "It has to look premium and high-end, like a launch visual from a top design studio or a big tech keynote: rich lighting, depth, glow where it fits, crisp detail, nothing cheap, flat or clip-art.",
@@ -509,12 +511,14 @@ function narrative(asset: AssetType, visual: string, brand: Brand, style: Style,
   const who = ctx.audience ?? brand.audience;
   lines.push(`It will be used ${ctx.usage ?? DEFAULT_USAGE[asset]}${who ? `, and the people seeing it are ${who}` : ""}.`);
   if (ctx.goal) lines.push(`The goal: ${ctx.goal.replace(/\.$/, "")}.`);
-  lines.push(QUALITY[style.tier ?? "premium"]);
+  // A chosen look sets the finish itself, so the premium line can't ask for glow and depth on a flat look.
+  lines.push(style.look && (style.tier ?? "premium") === "premium" ? LOOK_QUALITY : QUALITY[style.tier ?? "premium"]);
   // With exact text the model draws those words, so a direction's own "no text" would contradict it.
   const v = ctx.exactText?.length ? soften(visual).replace(/,?\s*no text\b\.?/gi, ".").replace(/\.\./g, ".") : soften(visual);
   lines.push(`What I have in mind: ${v}`);
   const cue = domainCues(name, ctx.about, ctx.audience, ctx.goal);
-  if (cue && asset !== "logo") lines.push(`Make the field obvious without words (${cue.field}): ${cue.cues}.`);
+  // One cue at most, and only when the subject doesn't already carry the field: listing them all put a shield in every cyber image.
+  if (cue && asset !== "logo") lines.push(`If the main subject doesn't already make the field (${cue.field}) obvious, add at most one of these quiet cues, never all of them: ${cue.cues}.`);
   const tp = thirdPartyRule(name, ctx.about, ctx.goal);
   if (tp) lines.push(tp);
   const ratio = parseAspect(ctx.targetAspect);
@@ -653,7 +657,8 @@ function styled(prompt: string, asset: AssetType, s: Style): string {
   if (asset === "logo") {
     if (t) parts.push(`Character: ${t.logo}.`);
   } else {
-    if (t) parts.push(`Style: ${t.look}.`);
+    // The look line already describes the finish; the tier's own art direction would contradict it.
+    if (t && !s.look) parts.push(`Style: ${t.look}.`);
     if (s.motion && MOTION_STYLE[s.motion]) parts.push(`${MOTION_STYLE[s.motion]}.`);
     if (s.theme === "dark") parts.push("Designed to sit on a dark website, so keep shadows rich and highlights controlled.");
   }
@@ -732,14 +737,17 @@ export function designBrief(asset: AssetType, subject: string, brand: Brand = {}
   const p = PLAYBOOKS[asset];
   const cueField = domainCues(subject, ctx.project, ctx.about, ctx.goal)?.field;
   const persona = matchPersona(ctx.audience, brand.audience);
-  if (!brand.colors?.length) {
+  // An explicit look brings its own palette; the field's or persona's colours would fight it.
+  if (!brand.colors?.length && !style.look) {
     if (cueField && PALETTES[cueField]) brand = { ...brand, colors: PALETTES[cueField] };
     else if (persona?.paletteHint) brand = { ...brand, colors: persona.paletteHint };
   }
   const typography = extra.fonts ?? ((cueField && FONT_PAIRINGS[cueField]) || DEFAULT_FONT_PAIRING);
   const preferred = extra.preferredStyle;
   const preferredTier = preferred?.tier && preferred.tier in TIER_STYLE ? (preferred.tier as Style["tier"]) : undefined;
-  const preferredLook = preferred?.look && preferred.look in LOOKS ? (preferred.look as Look) : undefined;
+  // A remembered look only fits when the caller hasn't asked for a different tier; a flat ask must not come back glossy.
+  const preferredLook =
+    preferred?.look && preferred.look in LOOKS && (!style.tier || style.tier === preferredTier) ? (preferred.look as Look) : undefined;
   // Premium is the floor: people want their visuals to look high-end unless they ask otherwise.
   // An explicit ask always wins; after that, what has actually shipped before for this asset type; after that, the audience's default.
   const s: Style = { ...style, tier: style.tier ?? preferredTier ?? persona?.tierHint ?? "premium", look: style.look ?? preferredLook };

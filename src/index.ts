@@ -771,15 +771,23 @@ server.registerTool(
       quality: z.enum(["original", "upscaled"]).default("original").describe("Flow only"),
       model: z.string().max(60).optional().describe("Higgsfield only, e.g. nano_banana_2, gpt_image_2_5"),
       max_credits: z.number().int().min(0).max(5000).default(0).describe("Higgsfield only: quote first, then cap"),
+      reference_images: z.array(z.string().max(500)).max(4).optional().describe("Codex only: up to 4 images inside the project to use as references, for example a clear photo of the person whose face must stay recognisable. Only use a photo of someone who has said yes (the user's own, or a person who agreed). The description says what to keep and what to change."),
       overwrite: z.boolean().default(false),
       fallback_providers: z.array(z.string().max(40)).max(4).optional().describe("Try these in order if the first provider fails (for example a site redesign broke a selector). Each attempt and why it failed is reported in the result."),
     },
   },
   async (a, extra: Extra) => {
+    let referenceFiles: string[] = [];
     try {
       const candidates = [a.provider, ...(a.fallback_providers ?? [])];
       for (const c of candidates) if (!knownProvider(c)) throw new Error(`Unknown provider "${c}". Call providers_list.`);
       precheck(a.output_path, a.overwrite);
+      if (a.reference_images?.length && !candidates.includes("codex")) throw new Error("reference_images works with the codex provider only. Add codex to provider or fallback_providers, or drop the references.");
+      referenceFiles = (a.reference_images ?? []).map((p) => {
+        const { file } = resolveInput(p);
+        if (!sniff(readHead(file))?.mime.startsWith("image/")) throw new Error(`A reference must be an image: ${p}`);
+        return file;
+      });
     } catch (e) {
       return fail(e);
     }
@@ -787,7 +795,7 @@ server.registerTool(
     /** One provider's actual image call. Returns the plain result data; throws on failure. Unchanged from before the fallback chain was added. */
     async function attemptImage(provider: string, onTick: (ms: number) => void, status: (msg: string) => void): Promise<Record<string, unknown>> {
       if (provider === "codex") {
-        const r = await codexImage(a.prompt, a.aspect, extra.signal);
+        const r = await codexImage(a.prompt, a.aspect, extra.signal, referenceFiles);
         return { saved: [save(r.data, "codex", a.prompt, a.output_path, a.overwrite)], via: r.note };
       }
       if (provider === "higgsfield") {

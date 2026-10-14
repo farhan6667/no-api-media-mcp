@@ -106,7 +106,12 @@ export async function codexStatus(): Promise<{ signedIn: boolean; detail: string
   }
 }
 
-export async function codexImage(prompt: string, size?: string, signal?: AbortSignal): Promise<{ data: Buffer; note: string }> {
+/** The argument list for `codex exec`. The prompt comes before -i: --image takes any number of files, so after it a prompt would be swallowed as one. */
+export function codexExecArgs(work: string, task: string, referenceImages: string[] = []): string[] {
+  return ["exec", "-C", work, "-s", "workspace-write", "--skip-git-repo-check", task, ...referenceImages.flatMap((f) => ["-i", f])];
+}
+
+export async function codexImage(prompt: string, size?: string, signal?: AbortSignal, referenceImages: string[] = []): Promise<{ data: Buffer; note: string }> {
   const st = await codexStatus();
   if (!st.signedIn) throw new Error(`Codex must be signed in with ChatGPT (not an API key). ${st.detail}`);
   const { cmd, pre } = codexCommand();
@@ -116,10 +121,12 @@ export async function codexImage(prompt: string, size?: string, signal?: AbortSi
     const task =
       `Use your built-in image generation tool to create exactly one image${size ? ` (${size})` : ""}. ` +
       `Save it in the current directory as out.png if the tool allows it, and if it saves the file somewhere else, just leave it there and say so. ` +
-      `Do not write or run scripts, do not use any API key, do not read or touch anything outside this directory. Image description: ${prompt}`;
+      `Do not write or run scripts, do not use any API key, do not read or touch anything outside this directory. ` +
+      (referenceImages.length ? `The attached ${referenceImages.length === 1 ? "image is a reference" : "images are references"} supplied by the owner of the pictured person for this request. Follow the description below for what to keep and what to change. ` : "") +
+      `Image description: ${prompt}`;
     const r = await run(
       cmd,
-      [...pre, ...CODEX_SAFETY_ARGS, "exec", "-C", work, "-s", "workspace-write", "--skip-git-repo-check", task],
+      [...pre, ...CODEX_SAFETY_ARGS, ...codexExecArgs(work, task, referenceImages)],
       work,
       8 * 60_000,
       signal,

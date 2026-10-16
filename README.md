@@ -13,6 +13,13 @@
 **no-api-media-mcp is an open source MCP server (Apache-2.0, Node 22+) that lets Claude Code, Cursor, Codex and other MCP clients make images and videos for your projects with the AI subscriptions you already pay for.**<br>
 **No API keys. No second bill.** Uses your own ChatGPT, Google AI Pro, Higgsfield and Grok accounts.
 
+<p align="center">
+  <a href="https://opencollective.com/nexaforge-oss"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/sponsor-button-dark.webp">
+    <img src="docs/img/sponsor-button-light.webp" width="480" alt="Support NexaForge: an animated gold Support button that opens the sponsor page">
+  </picture></a>
+</p>
+
 [Intro video](#watch-the-72-second-intro) • [Features](#features) • [Quick start](#quick-start) • [Connect accounts](#connect-your-accounts) • [Installation](#installation) • [Tools](#tools) • [CLI commands](#cli-commands) • [Troubleshooting](#troubleshooting)
 
 </div>

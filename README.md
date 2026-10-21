@@ -228,6 +228,16 @@ Lays up to 12 images on one grid instead of one at a time. No text is baked into
 
 Meta has said plainly that a plain "AI info" label does not by itself reduce a post's reach. What does get penalised is content that reads as a real photo of an event, person or statement that never happened. `design_brief`'s critique list now asks that question directly for every realistic asset type, and `social_sizes` covers Facebook, YouTube and X/Twitter cover sizes alongside LinkedIn, Instagram and Pinterest.
 
+## It keeps a face or a look consistent
+
+Pass `reference_images` to `image_generate` (Codex provider only) and the generated picture is built from your own photos. Use it for a person's portrait, a product, or a style you have already approved. The description says what to keep (for example "the same face, glasses and beard") and what to change (clothes, pose, setting, light).
+
+```sh
+image_generate(provider="codex", reference_images=["refs/me.png", "approved/portrait-v1.png"], prompt="Keep my face exactly. New navy blazer, glass wall at blue hour, calm expression...")
+```
+
+Up to four images, and each one has to be a real image file inside the project. Only use a photo of someone who has agreed to it, which usually means your own. For a fixed expression or a repeated fix, name the exact fault in the prompt ("brow crease, flat mouth") and pass the previous result as a reference. It is the one place a client can ask for a specific person, so the server never fetches a reference from the web.
+
 ## It falls back when a provider breaks
 
 Browser-driven providers depend on the site's own pages, and a redesign can break a selector overnight. Pass `fallback_providers` to `image_generate` and it tries the next one automatically instead of failing the whole run:
@@ -520,6 +530,10 @@ Not for being AI-made and disclosed as such; Meta has said that label alone does
 
 ### What happens if a provider's page changes and a call breaks?
 Pass `fallback_providers` to `image_generate` (for example `["codex", "gemini"]`) and it tries the next one in order. The result reports every attempt and its failure reason. A local, redacted journal also tracks this over time, so a real pattern (the same provider failing the same way repeatedly) gets called out instead of looking like one bad run.
+
+### Can it keep my face the same across pictures?
+
+Yes, with Codex. Pass `reference_images` with one or more photos of yourself, and say in the prompt what must stay (face, glasses, beard) and what may change. It is meant for your own photos or people who agreed, and results still need a look from you before they go public.
 
 ### Does it know who the image is for?
 If you tell `design_brief` who sees it (`context.audience`), it recognises a short list of real audiences (CISOs, developers, the open source community, security analysts, the general public) and adjusts tone, default tier, palette and the critique question accordingly. It won't guess an audience you didn't name.

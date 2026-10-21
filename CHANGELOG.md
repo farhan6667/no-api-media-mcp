@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.0 (2026-10-21)
+
+- **New: `reference_images` on `image_generate`.** Give Codex up to four photos from your project to keep a face,
+  a product or an approved look consistent while you change the clothes, setting, light or expression. Each one
+  must be a real image inside the project. It was checked live: the same face came back in a new scene, and a
+  second pass changed only the expression.
+- **Fix: picking the Flow video model.** The menu item's name came with an icon line in front of it, so the
+  full label never matched and the click could miss. It now matches the model name on its own line.
+  Image generation through Flow was checked live (0 credits). The video menu was not run, because it costs
+  credits, so tell me if a Veo model does not get picked.
+- Dependencies: zod 4.6.7, playwright-core 1.64.1, @types/node 26.6.5.
+- The README has a Support button.
+
 ## 1.3.0 (2026-10-11)
 
 - **The README graphics are rebuilt for 1.x.** The overview, the "What's new" image, the poster and the

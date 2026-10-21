@@ -118,7 +118,10 @@ async function configure(page: Page, mode: "Image" | "Video", model: FlowModel, 
     await page.keyboard.press("Escape").catch(() => undefined);
     throw new Error(`Flow has no ${pinned ? `"${pinned}"` : model} model right now. Its menu shows: ${labels.map((l) => l.trim()).filter(Boolean).join(", ") || "nothing readable"}.`);
   }
-  await page.getByRole("menuitem").filter({ hasText: label }).first().click();
+  // innerText carries the icon ligature on its own line ("volume_up\nVeo 3.1 - Lite"), but hasText
+  // matches textContent, which has no newline, so the full label never matches. Use the name line.
+  const name = label.split("\n").map((s) => s.trim()).filter(Boolean).pop() ?? label;
+  await page.getByRole("menuitem").filter({ hasText: name }).first().click();
   await sleep(400);
   // Output count radios have no accessible name, only the visible text x1..x4. Match that exact text,
   // so a layout change can never make us click an aspect radio by mistake.

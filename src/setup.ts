@@ -97,7 +97,9 @@ export async function runSetup(cfg: Config, browser: Browser, version: string, a
   say();
   // Always this exact copy by its absolute path, never `npx no-api-media-mcp@latest`: that would fetch and run
   // whatever is published under the name on every start. Written unredacted, since the path has to be usable.
+  // Forward slashes on Windows: Node takes them, and they survive being pasted into Git Bash as well as PowerShell.
   const launch = launchArgs();
+  launch.args = launch.args.map((x) => (process.platform === "win32" ? x.replace(/\\/g, "/") : x));
   const quoted = launch.args.map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(" ");
   say("Add to Claude Code:");
   process.stdout.write(`  claude mcp add --scope user no-api-media -- ${launch.command} ${quoted}\n`);

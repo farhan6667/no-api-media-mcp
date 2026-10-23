@@ -1,5 +1,71 @@
 # Changelog
 
+## 1.4.1 (2026-10-24)
+
+A security and correctness release from an adversarial QA pass. Every fix below was reproduced first against
+1.4.0 with a real crafted input, and each one has a regression test in `test/adversarial.test.ts`.
+
+**Security**
+
+- **A planted `.ai-media` link could make cleanup delete your files elsewhere.** If a cloned repo shipped
+  `.ai-media` as a symbolic link or junction, `media_cleanup` followed it and removed old media files in the
+  folder it pointed to (reproduced on Windows with a junction: a 60 day old photo outside the project was
+  deleted). `.ai-media` now has to be a real folder inside the project; otherwise nothing is read, written or
+  deleted through it, and generation stops before spending quota.
+- **`project_profile` followed links out of the project.** Its scan used `stat`, which follows links, so a
+  junction to another folder was read as part of the project, and a README.md linked to a credentials file
+  would have come back as the project's "about" text (which the workflow then puts into prompts sent to a
+  provider). It now walks with `lstat`, skips every link and only reads regular files inside the project.
+- **The printed client config could run someone else's package.** `setup` printed
+  `npx -y no-api-media-mcp@latest` and the help text used `npx no-api-media-mcp`, but the name is not
+  published on npm, so anyone could publish under it and that code would run on every server start. The
+  config now always starts this copy by its full path with `node`. The update notice tells a git checkout to
+  `git pull`, `npm ci` and `npm run build`, and suggests npm only to npm installs.
+- **Auto-update hardened.** It now runs only for an npm install, only with a plain version number from the
+  GitHub release (a tag like `9.9.9#github:someone/repo` or `file:../x` is ignored), through npm's own script
+  run by Node from the temp folder. On Windows it used to fail outright, since Node refuses to spawn `npm.cmd`
+  without a shell. A test used to run a real `npm install -g` of an unpublished name on every CI run; the tests
+  now never reach the npm registry.
+- **Network paths are refused before the disk is touched.** An `input_path` like `\\host\share\x.png` reached
+  the filesystem before the project check, which on Windows makes the machine offer the user's NTLM
+  credentials to that host. Input paths are now checked on their text first, then again after links are
+  resolved. Inputs outside the project get the same error whether or not the file exists, so errors no longer
+  tell a caller what exists elsewhere on the disk.
+- **Links that point nowhere are no longer written through.** A dangling symbolic link or junction inside the
+  project passed the output check (it doesn't "exist"), and a write would create the file wherever it pointed.
+  It is now refused with a clear message.
+- **Brand logos must be real local images.** `brand_profiles` accepted any path, including network paths and
+  text files. A logo now has to be a PNG, JPEG, WebP or GIF under 8 MB on this computer, checked when it is
+  registered and again when `compose` uses it.
+
+**Fixes**
+
+- `media_cleanup` called with its defaults removed nothing: the tool passed `undefined` for each day count and
+  that switched every rule off. The documented defaults (3, 14, 30 and 60 days) now apply.
+- A damaged `~/.no-api-media/state.json` crashed the server at startup. It now reads as empty.
+- A missing Chrome stopped the whole server at startup, even for Codex, Higgsfield and the local media tools.
+  Only the tools that need the browser now report it.
+- Higgsfield downloads always have a 10 minute deadline, even when the client passes its own cancel signal.
+- An empty `input_path` or a folder now gets a plain message instead of `EISDIR`.
+
+**Supply chain and CI**
+
+- Direct dependencies pinned to exact versions. `npm audit fix` moved body-parser to 2.4.0 and ip-address to
+  10.7.4 (both only used by the MCP SDK's HTTP transport, which this stdio server doesn't start). body-parser
+  2.4.0 was checked for npm provenance before taking it.
+- GitHub Actions pinned to commit SHAs, CI also runs `npm audit signatures`, and the npm publish workflow only
+  grants the OIDC token to its one job.
+- The quick start uses `npm ci`, which installs exactly what `package-lock.json` says.
+
+**Docs**
+
+- README and SECURITY.md no longer say there is "no network port" or that the browser is driven only over a
+  pipe while `share_browser` (on by default) opens a loopback devtools port. Stale lines fixed: the idle
+  timeout is 20 minutes, a second session queues or shares instead of failing, and the update check and
+  Google Fonts requests are now listed under telemetry.
+- Every `no-api-media-mcp config ...` command became `node dist/src/index.js config ...`, since the bare
+  command only exists for an npm install.
+
 ## 1.4.0 (2026-10-21)
 
 - **New: `reference_images` on `image_generate`.** Give Codex up to four photos from your project to keep a face,

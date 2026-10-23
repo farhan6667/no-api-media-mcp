@@ -83,9 +83,11 @@ Make every social size from public/og.png.
 ```bash
 git clone https://github.com/farhan6667/no-api-media-mcp
 cd no-api-media-mcp
-npm install && npm run build
+npm ci
 node dist/src/index.js setup
 ```
+
+`npm ci` installs the exact dependency versions in `package-lock.json` and builds the server.
 
 `setup` checks your machine, opens a Chrome window where you sign in to ChatGPT and Google, and prints the line to add to your AI client. Then just ask your agent for what you need.
 
@@ -187,7 +189,7 @@ Each Claude (or Cursor, or Codex) session runs its own copy of this server, but 
 This works through a loopback-only Chrome devtools port that's open while the browser is open. On your own computer that's fine. On a shared machine, turn it off:
 
 ```sh
-no-api-media-mcp config set share_browser false
+node dist/src/index.js config set share_browser false
 ```
 
 With sharing off, the second session waits in line instead and says so in its progress messages: its place in the queue, how long it has waited, and an estimate once there's enough history (taken from how long recent jobs on your machine really took). It carries on by itself when the browser frees up.
@@ -257,11 +259,15 @@ and it never installs anything unless you turn that on:
 | Setting | Default | What it does |
 |---|---|---|
 | `NOAPI_CHECK_UPDATES=0` | checks on | stop checking entirely |
-| `NOAPI_AUTO_UPDATE=1` | off | once a newer version is found, run `npm install -g no-api-media-mcp@latest` for you; it takes effect the next time the server starts, never mid-run |
+| `NOAPI_AUTO_UPDATE=1` | off | npm installs only: once a newer version is found, install exactly that version with npm for you; it takes effect the next time the server starts, never mid-run. A git checkout is never changed; the notice tells you to `git pull`, `npm ci` and `npm run build` |
 | `NOAPI_UPDATE_CHECK_HOURS` | 24 | how often to check |
 
 The check is a plain, unauthenticated read of this repo's own GitHub releases, with a size cap and a short
-timeout, and a failed check never breaks a real tool call.
+timeout, and a failed check never breaks a real tool call. Only a plain version number (like `1.4.1`) is
+ever handed to npm.
+
+The package is not published on npm yet, so the setup command and the client config always point at your
+own copy by its full path, never at `npx no-api-media-mcp`.
 
 ## It learns from its own mistakes
 
@@ -289,7 +295,7 @@ Generated drafts land in `<project>/.ai-media`. Left alone, that folder fills up
 
 Pass the draft's `file` to `design_audit` and `media_optimize` does the rest on its own. The final image goes to your project's own images folder, so nothing important stays in `.ai-media`.
 
-Cleanup runs once per session, and you can run it yourself with `media_cleanup` (a dry run by default, so it first shows what would go and how much space it frees). It is strict on purpose: it only looks inside `.ai-media`, never touches your final files, skips symbolic links, and ignores anything that is not a media file. Turn the automatic part off with `no-api-media-mcp config set auto_cleanup false` or `NOAPI_AUTO_CLEANUP=0`.
+Cleanup runs once per session, and you can run it yourself with `media_cleanup` (a dry run by default, so it first shows what would go and how much space it frees). It is strict on purpose: it only looks inside `.ai-media`, never touches your final files, skips symbolic links, and ignores anything that is not a media file. If `.ai-media` itself is a link or junction (a cloned repo could ship one), it refuses to read, write or delete anything there. Turn the automatic part off with `node dist/src/index.js config set auto_cleanup false` or `NOAPI_AUTO_CLEANUP=0`.
 
 ## Connect your accounts
 
@@ -417,6 +423,7 @@ codex mcp add no-api-media -- node /full/path/to/no-api-media-mcp/dist/src/index
 | `node dist/src/index.js --version` | Print the version |
 | `node dist/src/index.js config` | Show `strip_ai_metadata` and where its value comes from |
 | `node dist/src/index.js config set strip_ai_metadata false` | Keep embedded metadata in optimized files (`true` to strip again) |
+| `node dist/src/index.js config set <key> <value>` | Other keys: `auto_cleanup`, `share_browser` (true or false), `browser_idle_minutes` (0 to 240) |
 | `node dist/src/index.js help` | List these commands |
 | `codex login status` | Check the Codex CLI is signed in with ChatGPT |
 | `higgsfield workspace list` | List Higgsfield workspaces to pick one |
@@ -443,6 +450,8 @@ Without a command, `dist/src/index.js` runs as the MCP server. That's what your 
 | `rembg is installed without a backend` | `uv tool install --force "rembg[cpu,cli]"` |
 | `certificate check` while downloading a model | Your network inspects TLS. The server passes your system certificates to rembg automatically; if it still fails, run once on another network, the model is cached afterwards |
 | `Refusing to write outside the allowed folders` | Use a path inside the project, like `public/images/hero.png` |
+| `.ai-media is a link or junction` | `<project>/.ai-media` points somewhere else. Delete the link (not its target) and run again; the server makes a real folder |
+| `The path goes through a link that points nowhere` | A symbolic link or junction in that path leads to a missing place. Pick another path or remove the link |
 | Nothing happens on a Linux server | Chrome needs a display. Run under Xvfb |
 
 ## Configuration
@@ -464,7 +473,7 @@ Put a file in `~/.no-api-media/providers/<id>.json`. Start from [`examples/provi
 
 ## Safety and terms
 
-- Your password never touches this code, there is no network port, and the server can't write outside your project. The full threat model is in [SECURITY.md](SECURITY.md).
+- Your password never touches this code and the server can't write outside your project. It listens on no network port of its own; the one port is Chrome's loopback-only devtools port while `share_browser` is on (the default), which you can turn off. The full threat model is in [SECURITY.md](SECURITY.md).
 - Web providers drive the consumer sites the way you would by hand. OpenAI's, Google's and xAI's terms restrict automated use of those sites, so **using them is your call and your account's risk**. The server works at human pace, stops at captchas and sign-in pages, and doesn't hide that it is automation. Official CLIs (Codex, Higgsfield) are the safer routes.
 
 ## Behaviour notice: metadata is stripped from optimized files
@@ -482,7 +491,7 @@ Since 0.3.0, `media_optimize` removes embedded metadata from the files it writes
 Install this MCP server, then sign in once to ChatGPT, Google (Flow and Gemini), Higgsfield or Grok in the browser window it opens. After that you can ask Claude Code, Cursor or Codex for an image or a video and it uses the plan you already pay for.
 
 ### Does it see my password?
-No. You type your password yourself in a normal browser window. The server never asks for it, types it or stores it, and it drives the browser over a pipe. The one network port it can open is a loopback-only devtools port for `share_browser` (on by default, easy to turn off on a shared machine, see below).
+No. You type your password yourself in a normal browser window. The server never asks for it, types it or stores it. With `share_browser` off it drives the browser over a pipe only; with it on (the default) Chrome also opens a loopback-only devtools port so several sessions can share the window, which any program on your computer could use while it's open. Turn it off on a shared machine.
 
 ### Can it bill my API account by accident?
 It is built to prevent that. API key variables are removed from every child process, and Codex only runs when its login status shows a ChatGPT login.
@@ -502,7 +511,7 @@ An MCP client to talk to it, plus whatever sign-in the providers you want need.
 - **For Flow, Gemini and ChatGPT on the web**, Google Chrome, and a one-time sign-in in the window `accounts_login` opens.
 
 ### Does it leave browser windows open?
-No. Each job's tab closes when the job ends, and the window itself closes when your assistant calls `browser_done` at the end of the work. If that never happens, a safety net closes it after 20 idle minutes (`no-api-media-mcp config set browser_idle_minutes` changes that). While the work is still going, between rounds of edits, it deliberately stays open so the next step doesn't have to start the browser again.
+No. Each job's tab closes when the job ends, and the window itself closes when your assistant calls `browser_done` at the end of the work. If that never happens, a safety net closes it after 20 idle minutes (`node dist/src/index.js config set browser_idle_minutes 10` changes that). While the work is still going, between rounds of edits, it deliberately stays open so the next step doesn't have to start the browser again.
 
 ### Does it remove AI watermarks?
 No. `media_optimize` strips embedded metadata (EXIF, XMP and C2PA content credentials) from the files it writes, by default and with a report, and you can switch that off. It never touches invisible watermarks such as SynthID.
@@ -539,7 +548,7 @@ Yes, with Codex. Pass `reference_images` with one or more photos of yourself, an
 If you tell `design_brief` who sees it (`context.audience`), it recognises a short list of real audiences (CISOs, developers, the open source community, security analysts, the general public) and adjusts tone, default tier, palette and the critique question accordingly. It won't guess an audience you didn't name.
 
 ### Will it update itself without telling me?
-No. It checks once a day and tells you when a newer version exists, with the exact command to run. It only installs it for you if you explicitly set `NOAPI_AUTO_UPDATE=1`, and even then only for the next run, never while the server is live.
+No. It checks once a day and tells you when a newer version exists, with the exact command to run. For an npm install it only installs the update for you if you explicitly set `NOAPI_AUTO_UPDATE=1`, and even then only for the next run, never while the server is live. A git checkout is never updated automatically.
 
 ### Where do the palette and font suggestions in design_brief come from?
 From a reviewed UI design skill's colour and typography database, picked by the same topic detection the brief already does. They are only used when you don't supply your own brand colours, and you can always override them.

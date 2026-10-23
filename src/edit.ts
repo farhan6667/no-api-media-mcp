@@ -44,7 +44,13 @@ export function probe(file: string): Promise<{ duration?: number; width?: number
     p.on("error", () => reject(new Error("ffprobe not found (it comes with ffmpeg).")));
     p.on("close", (code) => {
       if (code !== 0) return reject(new Error("ffprobe could not read the file."));
-      const j = JSON.parse(out);
+      // A throw inside this event handler would be uncaught and take the whole server down.
+      let j;
+      try {
+        j = JSON.parse(out);
+      } catch {
+        return reject(new Error("ffprobe's report on this file could not be read."));
+      }
       const v = j.streams?.find((s: { codec_type: string }) => s.codec_type === "video");
       const a = j.streams?.find((s: { codec_type: string }) => s.codec_type === "audio");
       const [n, d] = String(v?.r_frame_rate ?? "0/1").split("/").map(Number);

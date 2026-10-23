@@ -450,7 +450,7 @@ Without a command, `dist/src/index.js` runs as the MCP server. That's what your 
 | `rembg is installed without a backend` | `uv tool install --force "rembg[cpu,cli]"` |
 | `certificate check` while downloading a model | Your network inspects TLS. The server passes your system certificates to rembg automatically; if it still fails, run once on another network, the model is cached afterwards |
 | `Refusing to write outside the allowed folders` | Use a path inside the project, like `public/images/hero.png` |
-| `.ai-media is a link or junction` | `<project>/.ai-media` points somewhere else. Delete the link (not its target) and run again; the server makes a real folder |
+| `.ai-media (or a bookkeeping file in it) is a link or junction` | `<project>/.ai-media`, or `status.json` / `manifest.jsonl` in it, points somewhere else. Delete the link (not its target) and run again; the server makes real ones |
 | `The path goes through a link that points nowhere` | A symbolic link or junction in that path leads to a missing place. Pick another path or remove the link |
 | Nothing happens on a Linux server | Chrome needs a display. Run under Xvfb |
 

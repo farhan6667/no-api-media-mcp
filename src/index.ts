@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, hig
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
 import { confineInput, imageSize, isInside, isNetworkPath, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
 import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, parseAspect, type Look } from "./design.js";
-import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft, mediaDirIsSafe, UNSAFE_MEDIA_DIR } from "./housekeeping.js";
+import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft, mediaDirIsSafe, plainOrMissing, UNSAFE_MEDIA_DIR } from "./housekeeping.js";
 import { ENTRY, installedFromNpm } from "./install.js";
 import { classifyFailure, providerHealth, readReliability, recordProviderOutcome } from "./reliability.js";
 import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
@@ -290,7 +290,8 @@ function ensureMediaDir(root: string) {
   const dir = join(root, ".ai-media");
   mkdirSync(dir, { recursive: true });
   const gi = join(dir, ".gitignore");
-  if (!existsSync(gi)) writeFileSync(gi, "*\n");
+  // lstat-based: existsSync says "missing" for a dangling link, and writing then creates its target.
+  if (!lstatSync(gi, { throwIfNoEntry: false })) writeFileSync(gi, "*\n", { flag: "wx" });
   return dir;
 }
 
@@ -320,7 +321,9 @@ function save(buf: Buffer, provider: string, prompt: string, outputPath: string 
   const size = kind.mime.startsWith("image/") ? imageSize(buf) : undefined;
   // Paths are returned relative to the project, so the user's home folder name never leaves the machine.
   const entry = { time: new Date().toISOString(), provider, file: relative(root, file), bytes: buf.length, mime: kind.mime, ...size, prompt };
-  appendFileSync(join(mediaDir, "manifest.jsonl"), JSON.stringify(entry) + "\n");
+  const manifest = join(mediaDir, "manifest.jsonl");
+  if (plainOrMissing(manifest)) appendFileSync(manifest, JSON.stringify(entry) + "\n");
+  else log("Not writing .ai-media/manifest.jsonl: it is a link, not a plain file.");
   // Housekeeping runs before the new file is registered, so it can never touch it.
   const hk = autoCleanup(root, cfg.autoCleanup);
   markDraft(root, file, { status: "draft" });

@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,7 @@ import { after, describe, it } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CHROME_MISSING, readState, requireChrome } from "../src/config.js";
-import { autoCleanup, cleanup, markDraft, mediaDirIsSafe, resetAutoCleanup } from "../src/housekeeping.js";
+import { autoCleanup, cleanup, markDraft, mediaDirIsSafe, plainOrMissing, resetAutoCleanup } from "../src/housekeeping.js";
 import { installedFromNpm, launchArgs } from "../src/install.js";
 import { projectProfile } from "../src/project.js";
 import { readManifest } from "../src/report.js";
@@ -82,6 +82,30 @@ describe("a planted .ai-media link can't turn cleanup into deleting the user's f
     if (made !== true) return t.skip(`cannot create a symlink here (${made})`);
     assert.throws(() => cleanup(root, { dryRun: false }), /link or junction/);
     assert.ok(existsSync(join(outside, "precious-photo.png")));
+  });
+
+  it("a status.json or manifest.jsonl hard-linked to another file is never written or read", () => {
+    const root = temp("noapi-adv-root-");
+    const outside = temp("noapi-adv-out-");
+    mkdirSync(join(root, ".ai-media"), { recursive: true });
+    writeFileSync(join(outside, "bashrc"), "original\n");
+    linkSync(join(outside, "bashrc"), join(root, ".ai-media", "status.json"));
+    markDraft(root, join(root, ".ai-media", "x.png"), { status: "rejected", note: "user: anything" });
+    assert.equal(readFileSync(join(outside, "bashrc"), "utf8"), "original\n");
+    assert.equal(plainOrMissing(join(root, ".ai-media", "status.json")), false);
+    writeFileSync(join(outside, "m"), JSON.stringify({ time: "t", provider: "p" }) + "\n");
+    linkSync(join(outside, "m"), join(root, ".ai-media", "manifest.jsonl"));
+    assert.throws(() => readManifest(root), /link or junction/);
+  });
+
+  it("a status.json symlink (Linux, macOS) is never written through", (t) => {
+    const root = temp("noapi-adv-root-");
+    const outside = temp("noapi-adv-out-");
+    mkdirSync(join(root, ".ai-media"), { recursive: true });
+    const made = link(join(outside, "target"), join(root, ".ai-media", "status.json"), "file");
+    if (made !== true) return t.skip(`cannot create a file symlink here (${made})`);
+    markDraft(root, join(root, ".ai-media", "x.png"), { status: "rejected" });
+    assert.ok(!existsSync(join(outside, "target")), "a dangling status.json link created its target");
   });
 
   it("the media_cleanup defaults really apply when the tool leaves the day counts out", () => {

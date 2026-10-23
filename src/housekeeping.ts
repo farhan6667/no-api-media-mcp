@@ -65,12 +65,26 @@ export function mediaDirIsSafe(root: string): boolean {
   }
 }
 
-export const UNSAFE_MEDIA_DIR = "<project>/.ai-media is a link or junction, not a real folder. Nothing is read, written or deleted through it. Remove the link and try again.";
+/**
+ * A bookkeeping file in .ai-media (status.json, manifest.jsonl, .gitignore) that may be read or written:
+ * missing, or a plain file with a single name. A repo can commit a link there, and writing through it would
+ * overwrite or append to whatever file it points at.
+ */
+export function plainOrMissing(file: string): boolean {
+  try {
+    const st = lstatSync(file, { throwIfNoEntry: false });
+    return !st || (st.isFile() && st.nlink <= 1);
+  } catch {
+    return false;
+  }
+}
+
+export const UNSAFE_MEDIA_DIR = "<project>/.ai-media (or a bookkeeping file in it) is a link or junction, not a real folder or file. Nothing is read, written or deleted through it. Remove the link and try again.";
 
 export function readStatus(root: string): Record<string, StatusEntry> {
   const f = join(mediaDirOf(root), "status.json");
   try {
-    return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as Record<string, StatusEntry>) : {};
+    return existsSync(f) && plainOrMissing(f) ? (JSON.parse(readFileSync(f, "utf8")) as Record<string, StatusEntry>) : {};
   } catch {
     return {};
   }
@@ -78,7 +92,7 @@ export function readStatus(root: string): Record<string, StatusEntry> {
 
 function writeStatus(root: string, data: Record<string, StatusEntry>) {
   const dir = mediaDirOf(root);
-  if (!existsSync(dir) || !mediaDirIsSafe(root)) return;
+  if (!existsSync(dir) || !mediaDirIsSafe(root) || !plainOrMissing(join(dir, "status.json"))) return;
   writeFileSync(join(dir, "status.json"), JSON.stringify(data, null, 1));
 }
 

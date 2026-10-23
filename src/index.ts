@@ -15,9 +15,10 @@ import { codexImage, codexStatus } from "./providers/codex.js";
 import { genericGenerate, genericStatus, loadSpecs } from "./providers/generic.js";
 import { downloadHttps, higgsfieldCost, higgsfieldGenerate, higgsfieldLogin, higgsfieldStatus } from "./providers/higgsfield.js";
 import { flowGenerate, flowQuote, flowStatus, geminiImage, type Aspect, type FlowModel } from "./providers/google.js";
-import { imageSize, isInside, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
+import { confineInput, imageSize, isInside, isNetworkPath, JobGate, log, MEDIA_EXTS, redact, resolveOutput, sniff } from "./safety.js";
 import { ASSET_TYPES, AUDIT_RUBRIC, auditScores, designBrief, LOOKS, parseAspect, type Look } from "./design.js";
-import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft } from "./housekeeping.js";
+import { autoCleanup, cleanup, DEFAULT_DAYS, markDraft, mediaDirIsSafe, UNSAFE_MEDIA_DIR } from "./housekeeping.js";
+import { ENTRY, installedFromNpm } from "./install.js";
 import { classifyFailure, providerHealth, readReliability, recordProviderOutcome } from "./reliability.js";
 import { autoInstall, checkForUpdate, updateNotice } from "./update.js";
 import { learnedFor, learnedSentence, preferredStyleFor, readJournal, record } from "./learning.js";
@@ -98,14 +99,16 @@ if (process.argv[2] === "config") {
   process.exit(0);
 }
 if (process.argv[2] === "help" || process.argv[2] === "--help") {
+  // The way this copy is really started, never `npx <name>`: on a git checkout that name could fetch someone else's package.
+  const cli = installedFromNpm() ? "no-api-media-mcp" : relative(process.cwd(), ENTRY) === join("dist", "src", "index.js") ? "node dist/src/index.js" : `node "${ENTRY}"`;
   process.stdout.write(
     `no-api-media-mcp ${VERSION}\n\n` +
-      "  npx no-api-media-mcp setup            check everything, open the sign-in window, print client config\n" +
-      "  npx no-api-media-mcp login [services] sign in again: login google, login chatgpt, or login chatgpt,google\n" +
-      "  npx no-api-media-mcp status           show which accounts are ready, without opening a window\n" +
-      "  npx no-api-media-mcp config           show settings (strip_ai_metadata and where it comes from)\n" +
-      "  npx no-api-media-mcp config set strip_ai_metadata false   keep embedded metadata in optimized files\n" +
-      "  npx no-api-media-mcp --version\n\n" +
+      `  ${cli} setup            check everything, open the sign-in window, print client config\n` +
+      `  ${cli} login [services] sign in again: login google, login chatgpt, or login chatgpt,google\n` +
+      `  ${cli} status           show which accounts are ready, without opening a window\n` +
+      `  ${cli} config           show settings and where each value comes from\n` +
+      `  ${cli} config set <key> <value>   keys: strip_ai_metadata, auto_cleanup, share_browser, browser_idle_minutes\n` +
+      `  ${cli} --version\n\n` +
       "Without a command it runs as an MCP server over stdio (that's what your AI client starts).\n",
   );
   process.exit(0);
@@ -283,6 +286,7 @@ function keepFlowProject(url: string) {
 
 /** Keep raw outputs out of git: .ai-media ignores itself. */
 function ensureMediaDir(root: string) {
+  if (!mediaDirIsSafe(root)) throw new Error(UNSAFE_MEDIA_DIR);
   const dir = join(root, ".ai-media");
   mkdirSync(dir, { recursive: true });
   const gi = join(dir, ".gitignore");
@@ -292,6 +296,8 @@ function ensureMediaDir(root: string) {
 
 /** Reject a bad output_path before any quota or credits are spent. */
 function precheck(outputPath: string | undefined, overwrite: boolean) {
+  // Without output_path the result goes into .ai-media, so that has to be a real folder before quota is spent.
+  if (!mediaDirIsSafe(realpathSync(cfg.outputRoots[0]))) throw new Error(UNSAFE_MEDIA_DIR);
   if (!outputPath) return;
   resolveOutput({ roots: cfg.outputRoots, outputPath, provider: "check", prompt: "", ext: extname(outputPath), overwrite, dryRun: true });
 }
@@ -503,7 +509,7 @@ server.registerTool(
       let marked: string | undefined;
       if (a.file) {
         const root = realpathSync(cfg.outputRoots[0]);
-        const abs = realpathSync(resolve(root, a.file));
+        const abs = confineInput(cfg.outputRoots, a.file);
         if (isInside(abs, join(root, ".ai-media")) && markDraft(root, abs, { status: result.verdict === "ship" ? "shortlisted" : "rejected", note: `audit average ${result.average}` })) {
           marked = result.verdict === "ship" ? "shortlisted" : "rejected";
         }
@@ -542,6 +548,7 @@ server.registerTool(
       if (!a.id) throw new Error(`${a.action} needs an id.`);
       if (a.action === "remove") return ok({ removed: removeBrand(cfg.home, a.id) });
       if (!a.name || !a.publisher) throw new Error("set needs at least name and publisher.");
+      for (const f of [a.logo_dark, a.logo_light]) if (f) checkLogoFile(f);
       const saved = saveBrand(cfg.home, {
         id: a.id,
         name: a.name,
@@ -591,7 +598,7 @@ server.registerTool(
       let root: string | undefined;
       if (a.file) {
         root = realpathSync(cfg.outputRoots[0]);
-        abs = realpathSync(resolve(root, a.file));
+        abs = confineInput(cfg.outputRoots, a.file);
         if (!isInside(abs, join(root, ".ai-media"))) throw new Error("file must be a draft inside .ai-media.");
       }
       const e = recordFeedback(cfg.home, { asset: a.asset_type, problem: a.problem, instead: a.instead, scope: a.applies_to, brand: a.brand });
@@ -982,13 +989,32 @@ function readHead(file: string, n = 64): Buffer {
   }
 }
 
+/**
+ * A brand logo may live outside the project (one logo folder for every project), so it can't be confined like
+ * other inputs. It must at least be a real, local image file of a sane size: never a network path (opening one
+ * makes Windows offer the user's credentials to that host), never a folder or a text file.
+ */
+function checkLogoFile(f: string) {
+  if (isNetworkPath(f)) throw new Error("A logo must be a file on this computer, not a network (UNC) path.");
+  const abs = resolve(f);
+  let st;
+  try {
+    st = statSync(abs);
+  } catch {
+    throw new Error(`Logo file not found: ${f}`);
+  }
+  if (!st.isFile() || st.size > 8 * 1024 * 1024 || !sniff(readHead(abs))?.mime.startsWith("image/")) throw new Error(`A logo must be a PNG, JPEG, WebP or GIF image under 8 MB: ${f}`);
+}
+
 const AUDIO_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac"]);
 
 /** An input file: must be inside the project and really be what it claims (media by bytes, srt/audio by extension and size). */
 function resolveInput(p: string, kind: "media" | "audio" | "srt" = "media") {
   const root = realpathSync(cfg.outputRoots[0]);
-  const file = realpathSync(resolve(root, p));
-  if (!cfg.outputRoots.some((r) => isInside(file, realpathSync(r)))) throw new Error(`Input must be inside the project: ${p}`);
+  // Checked on the text first, so a path outside the project (or a UNC path, which makes Windows offer the
+  // user's credentials to that host) never touches the disk, then again after links are resolved.
+  const file = confineInput(cfg.outputRoots, p);
+  if (statSync(file).isDirectory()) throw new Error(`That is a folder, not a file: ${p}`);
   const ext = extname(file).toLowerCase();
   if (kind === "srt") {
     if (ext !== ".srt") throw new Error("Subtitles must be an .srt file.");
@@ -1276,6 +1302,7 @@ server.registerTool(
       const logoFile = brand?.logo ? (logoRegion.mean < 140 ? brand.logo.dark ?? brand.logo.light : brand.logo.light ?? brand.logo.dark) : undefined;
       let logo: { dataUrl: string; corner: Corner; tile: boolean } | undefined;
       if (logoFile) {
+        checkLogoFile(logoFile);
         const head = readHead(logoFile);
         const lk = sniff(head);
         if (!lk?.mime.startsWith("image/") || statSync(logoFile).size > 8 * 1024 * 1024) throw new Error(`The brand's logo file isn't a usable image: ${logoFile}`);
@@ -1481,8 +1508,8 @@ server.registerTool(
   async (a, extra: Extra) => {
     try {
       const root = realpathSync(cfg.outputRoots[0]);
-      const input = realpathSync(resolve(root, a.input_path));
-      if (!cfg.outputRoots.some((r) => isInside(input, realpathSync(r)))) throw new Error("Input must be inside the project.");
+      const input = confineInput(cfg.outputRoots, a.input_path);
+      if (statSync(input).isDirectory()) throw new Error(`That is a folder, not a file: ${a.input_path}`);
       if (!MEDIA_EXTS.has(extname(input).toLowerCase())) throw new Error("Input is not a media file.");
       // Trust the bytes, not the name: a playlist renamed to .mp4 could make ffmpeg fetch other files.
       const kind = sniff(readHead(input));

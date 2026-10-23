@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { scrubbedEnv } from "./config.js";
+import { installedFromNpm, npmCliPath, updateCommand } from "./install.js";
 
 /**
  * A version check only, never a silent self-patch. The server tells you a newer version exists and exactly
@@ -13,6 +15,10 @@ import { scrubbedEnv } from "./config.js";
 const RELEASES_URL = "https://api.github.com/repos/farhan6667/no-api-media-mcp/releases/latest";
 const MAX_RESPONSE_BYTES = 200_000;
 const DEFAULT_TIMEOUT_MS = 4_000;
+/** A plain release version. Anything else (a git URL, a file: spec, a dist-tag) is never handed to npm. */
+const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}(-[0-9A-Za-z.]{1,30})?$/;
+
+export const _test = { VERSION_RE };
 
 export interface ReleaseInfo {
   version: string;
@@ -46,8 +52,10 @@ async function fetchLatestRelease(fetcher: Fetcher, timeoutMs: number): Promise<
     if (text.length > MAX_RESPONSE_BYTES) return undefined;
     const data = JSON.parse(text) as { tag_name?: unknown; name?: unknown; html_url?: unknown };
     if (typeof data.tag_name !== "string") return undefined;
+    const version = data.tag_name.replace(/^v/i, "");
+    if (!VERSION_RE.test(version)) return undefined;
     return {
-      version: data.tag_name.replace(/^v/i, ""),
+      version,
       name: typeof data.name === "string" ? data.name.slice(0, 200) : data.tag_name,
       url: typeof data.html_url === "string" && data.html_url.startsWith("https://github.com/farhan6667/no-api-media-mcp/") ? data.html_url : "https://github.com/farhan6667/no-api-media-mcp/releases/latest",
     };
@@ -92,23 +100,38 @@ export async function checkForUpdate(saved: UpdateState, opts: CheckOptions): Pr
   return { state, release: release && isNewer(release.version, opts.currentVersion) ? release : undefined };
 }
 
-export function updateNotice(release: ReleaseInfo, currentVersion: string): string {
+export function updateNotice(release: ReleaseInfo, currentVersion: string, fromNpm: boolean = installedFromNpm()): string {
   return (
     `A newer no-api-media-mcp is out: v${release.version} (you have v${currentVersion}). "${release.name}". ` +
-    `Update with: npm install -g no-api-media-mcp@latest, or see ${release.url}. ` +
-    `Set NOAPI_CHECK_UPDATES=0 to stop this check, or NOAPI_AUTO_UPDATE=1 to install new versions automatically ` +
-    `(installs for the next run; it never patches the server while it's running).`
+    `Update with: ${updateCommand(fromNpm)}, or see ${release.url}. ` +
+    `Set NOAPI_CHECK_UPDATES=0 to stop this check` +
+    (fromNpm ? `, or NOAPI_AUTO_UPDATE=1 to install new versions automatically (installs for the next run; it never patches the server while it's running).` : ".")
   );
 }
 
-/** Only ever called when the user has set NOAPI_AUTO_UPDATE=1. Runs the real npm, no shell, scrubbed env. */
-export function autoInstall(version: string): Promise<{ ok: boolean; detail: string }> {
+export interface AutoInstallOptions {
+  /** Default: worked out from where this copy lives. Auto-update only ever runs for an npm install. */
+  fromNpm?: boolean;
+  /** Default: npm's own npm-cli.js next to the running Node. */
+  npmCli?: string;
+}
+
+/**
+ * Only ever called when the user has set NOAPI_AUTO_UPDATE=1. Installs exactly the version GitHub reported,
+ * through npm's own script run by Node (no shell, no npm.cmd lookup), from the temp folder, with a scrubbed env.
+ * A git checkout is never touched: it says how to update by hand instead.
+ */
+export function autoInstall(version: string, opts: AutoInstallOptions = {}): Promise<{ ok: boolean; detail: string }> {
+  const fromNpm = opts.fromNpm ?? installedFromNpm();
+  if (!fromNpm) return Promise.resolve({ ok: false, detail: `This copy is a git checkout, so it is not updated automatically. Update with: ${updateCommand(false)}.` });
+  if (!VERSION_RE.test(version)) return Promise.resolve({ ok: false, detail: `Refusing to install "${version.slice(0, 40)}": not a plain release version.` });
+  const cli = opts.npmCli ?? npmCliPath();
+  if (!cli) return Promise.resolve({ ok: false, detail: "Could not find npm next to this Node. Update by hand: npm install -g no-api-media-mcp@latest" });
   return new Promise((resolve) => {
-    const cmd = process.platform === "win32" ? "npm.cmd" : "npm";
     let out = "";
     let p;
     try {
-      p = spawn(cmd, ["install", "-g", `no-api-media-mcp@${version}`], { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: scrubbedEnv() });
+      p = spawn(process.execPath, [cli, "install", "-g", `no-api-media-mcp@${version}`], { cwd: tmpdir(), shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: scrubbedEnv() });
     } catch (e) {
       resolve({ ok: false, detail: (e as Error).message });
       return;

@@ -1,5 +1,6 @@
-import { existsSync, lstatSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
+import { isInside } from "./safety.js";
 
 /**
  * Draft housekeeping. Every generation lands in <project>/.ai-media. Without cleanup that folder grows forever
@@ -8,6 +9,8 @@ import { extname, join, relative, sep } from "node:path";
  * Safety rules, on purpose strict:
  * - Only files inside <project>/.ai-media are ever considered. Final assets in the project are never touched.
  * - Only real files with a media extension. Symbolic links and junctions are skipped, never followed.
+ * - .ai-media itself must be a real folder inside the project. If it is a link or junction (a cloned repo can
+ *   ship one), nothing is read, written or deleted through it.
  * - A draft marked "used" is only removed when the final file it produced still exists.
  * - Nothing is deleted when dry_run is true, and the result lists exactly what would go and how many bytes it frees.
  */
@@ -40,6 +43,30 @@ export function mediaDirOf(root: string): string {
   return join(root, ".ai-media");
 }
 
+/**
+ * True when <root>/.ai-media is missing or a real directory inside the project. False when it is a symbolic
+ * link, a junction, a file, or resolves anywhere else: following it would let cleanup delete the user's own
+ * files elsewhere on the disk.
+ */
+export function mediaDirIsSafe(root: string): boolean {
+  const dir = mediaDirOf(root);
+  let st;
+  try {
+    st = lstatSync(dir, { throwIfNoEntry: false });
+  } catch {
+    return false;
+  }
+  if (!st) return true;
+  if (st.isSymbolicLink() || !st.isDirectory()) return false;
+  try {
+    return isInside(realpathSync(dir), realpathSync(root));
+  } catch {
+    return false;
+  }
+}
+
+export const UNSAFE_MEDIA_DIR = "<project>/.ai-media is a link or junction, not a real folder. Nothing is read, written or deleted through it. Remove the link and try again.";
+
 export function readStatus(root: string): Record<string, StatusEntry> {
   const f = join(mediaDirOf(root), "status.json");
   try {
@@ -51,7 +78,7 @@ export function readStatus(root: string): Record<string, StatusEntry> {
 
 function writeStatus(root: string, data: Record<string, StatusEntry>) {
   const dir = mediaDirOf(root);
-  if (!existsSync(dir)) return;
+  if (!existsSync(dir) || !mediaDirIsSafe(root)) return;
   writeFileSync(join(dir, "status.json"), JSON.stringify(data, null, 1));
 }
 
@@ -126,12 +153,15 @@ function pruneEmptyDirs(dir: string, base: string) {
 }
 
 export function cleanup(root: string, opts: { days?: Partial<Days>; dryRun?: boolean; now?: number } = {}): CleanupResult {
-  const days: Days = { ...DEFAULT_DAYS, ...opts.days };
+  // A day count left undefined (the tool's optional arguments) keeps its default instead of disabling the rule.
+  const given = Object.fromEntries(Object.entries(opts.days ?? {}).filter(([, v]) => typeof v === "number" && Number.isFinite(v)));
+  const days: Days = { ...DEFAULT_DAYS, ...given };
   const now = opts.now ?? Date.now();
   const dryRun = opts.dryRun ?? true;
   const base = mediaDirOf(root);
   const result: CleanupResult = { dryRun, removed: [], freedBytes: 0, kept: 0 };
-  if (!existsSync(base)) return result;
+  if (!existsSync(base) && !lstatSync(base, { throwIfNoEntry: false })) return result;
+  if (!mediaDirIsSafe(root)) throw new Error(UNSAFE_MEDIA_DIR);
   const status = readStatus(root);
   const files: string[] = [];
   walk(base, 0, files);

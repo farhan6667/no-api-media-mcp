@@ -113,7 +113,9 @@ export async function downloadHttps(url: string, signal?: AbortSignal): Promise<
   // Follow redirects by hand so every hop is re-checked (https, public host).
   for (let hop = 0; hop < 5; hop++) {
     assertPublicHttps(current);
-    const res = await fetch(current, { redirect: "manual", signal: signal ?? AbortSignal.timeout(5 * 60_000) });
+    // Always a deadline, even when the caller passes its own cancel signal: a stalled CDN must not hang a job forever.
+    const deadline = AbortSignal.timeout(10 * 60_000);
+    const res = await fetch(current, { redirect: "manual", signal: signal ? AbortSignal.any([signal, deadline]) : deadline });
     if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
       current = new URL(res.headers.get("location")!, current).toString();
       continue;

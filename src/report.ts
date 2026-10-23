@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { mediaDirIsSafe, UNSAFE_MEDIA_DIR } from "./housekeeping.js";
 
 /**
  * A local usage summary built from the project's own .ai-media/manifest.jsonl (the record save() already
@@ -23,6 +24,7 @@ export function manifestPath(root: string): string {
 
 export function readManifest(root: string): ManifestEntry[] {
   const f = manifestPath(root);
+  if (!mediaDirIsSafe(root)) throw new Error(UNSAFE_MEDIA_DIR);
   if (!existsSync(f)) return [];
   const out: ManifestEntry[] = [];
   for (const line of readFileSync(f, "utf8").split("\n")) {

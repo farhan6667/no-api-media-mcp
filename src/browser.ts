@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser as ChromiumBrowser, type BrowserContext, type Page } from "playwright-core";
-import type { Config } from "./config.js";
+import { requireChrome, type Config } from "./config.js";
 import { aheadOf, clearHost, formatEta, hostAlive, joinQueue, leaveQueue, markHost, waiting } from "./queue.js";
 import { readReliability, typicalBrowserJobMs } from "./reliability.js";
 import { assertPublicHttps, log } from "./safety.js";
@@ -110,7 +110,7 @@ export class Browser {
 
   private async launch(): Promise<BrowserContext> {
     const ctx = await chromium.launchPersistentContext(this.cfg.profileDir, {
-      executablePath: this.cfg.chromePath,
+      executablePath: requireChrome(this.cfg),
       headless: false,
       viewport: null,
       // Downloads go to a Playwright temp folder and are moved by the server, never to ~/Downloads.
@@ -326,9 +326,10 @@ export class Browser {
    * themselves. Google and OpenAI see a normal browser; the server is not in the loop while they type.
    */
   async openForLogin(urls: string[]) {
+    const chrome = requireChrome(this.cfg);
     await this.close();
     const child = spawn(
-      this.cfg.chromePath,
+      chrome,
       [`--user-data-dir=${this.cfg.profileDir}`, "--no-first-run", "--no-default-browser-check", ...urls],
       { cwd: tmpdir(), detached: true, stdio: "ignore", shell: false },
     );

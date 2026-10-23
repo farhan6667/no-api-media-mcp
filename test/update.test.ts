@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { autoInstall, checkForUpdate, isNewer, updateNotice, type Fetcher } from "../src/update.js";
 
 function okFetcher(body: unknown, status = 200): Fetcher {
@@ -108,20 +110,52 @@ describe("checkForUpdate", () => {
 });
 
 describe("updateNotice", () => {
-  it("names the real version, the update command, and both toggles", () => {
-    const text = updateNotice({ version: "0.6.0", name: "Learning release", url: "https://github.com/farhan6667/no-api-media-mcp/releases/tag/v0.6.0" }, "0.5.0");
+  const rel = { version: "0.6.0", name: "Learning release", url: "https://github.com/farhan6667/no-api-media-mcp/releases/tag/v0.6.0" };
+  it("for an npm install: names the real version, the npm command, and both toggles", () => {
+    const text = updateNotice(rel, "0.5.0", true);
     assert.match(text, /v0\.6\.0/);
     assert.match(text, /v0\.5\.0/);
     assert.match(text, /npm install -g no-api-media-mcp@latest/);
     assert.match(text, /NOAPI_CHECK_UPDATES=0/);
     assert.match(text, /NOAPI_AUTO_UPDATE=1/);
   });
+  it("for a git checkout: never suggests npm (the package name may belong to someone else there)", () => {
+    const text = updateNotice(rel, "0.5.0", false);
+    assert.match(text, /git pull/);
+    assert.doesNotMatch(text, /npm install -g/);
+    assert.doesNotMatch(text, /NOAPI_AUTO_UPDATE/);
+  });
+});
+
+describe("release versions handed to npm", () => {
+  it("only plain release versions from GitHub are accepted", async () => {
+    for (const tag of ["v9.9.9#github:attacker/repo", "file:../evil", "github:attacker/repo", "latest", "1.2", "1.2.3 --registry=http://x", "1.2.3-a/b"]) {
+      const r = await checkForUpdate({}, { currentVersion: "1.0.0", intervalHours: 0, now: 1, fetcher: okFetcher({ tag_name: tag, name: "x" }) });
+      assert.equal(r.release, undefined, tag);
+    }
+    const ok = await checkForUpdate({}, { currentVersion: "1.0.0", intervalHours: 0, now: 1, fetcher: okFetcher({ tag_name: "v1.5.0", name: "x" }) });
+    assert.equal(ok.release?.version, "1.5.0");
+  });
 });
 
 describe("autoInstall", () => {
-  it("never throws, even if npm is missing, and reports failure honestly", async () => {
-    const r = await autoInstall("0.0.0-does-not-exist");
-    assert.equal(typeof r.ok, "boolean");
+  // These never reach the npm registry: a real `npm install -g` from a test would run whatever is
+  // published under that name by anyone, on every CI runner.
+  it("never touches a git checkout", async () => {
+    const r = await autoInstall("1.5.0", { fromNpm: false, npmCli: "/must/not/run" });
+    assert.equal(r.ok, false);
+    assert.match(r.detail, /git checkout/);
+  });
+  it("refuses anything but a plain version, before running anything", async () => {
+    for (const v of ["github:attacker/repo", "file:../x", "1.2.3 --registry=http://evil", "latest"]) {
+      const r = await autoInstall(v, { fromNpm: true, npmCli: "/must/not/run" });
+      assert.equal(r.ok, false);
+      assert.match(r.detail, /not a plain release version/);
+    }
+  });
+  it("reports failure honestly and never throws when npm's script is missing", async () => {
+    const r = await autoInstall("1.5.0", { fromNpm: true, npmCli: join(tmpdir(), "no-such-npm-cli.js") });
+    assert.equal(r.ok, false);
     assert.equal(typeof r.detail, "string");
   });
 });

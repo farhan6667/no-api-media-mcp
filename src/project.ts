@@ -1,11 +1,26 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { extname, join, relative } from "node:path";
+import { isInside } from "./safety.js";
 
 /**
  * Read-only look at the project to work out its visual personality, so generated media fits it:
  * a luxury 3D site gets cinematic premium renders, a modest nonprofit site gets calm respectful imagery.
- * Reads only inside the project, skips heavy folders, caps file count and size.
+ * Reads only inside the project, skips heavy folders, caps file count and size. Symbolic links and junctions
+ * are never followed: a cloned repo could ship README.md as a link to a credentials file, and whatever this
+ * returns goes straight into the assistant's context and from there into prompts sent to image providers.
  */
+
+/** A regular file (not a link) that really sits inside root, small enough to read. */
+function readInside(root: string, file: string, maxBytes = 400_000): string | undefined {
+  try {
+    const st = lstatSync(file, { throwIfNoEntry: false });
+    if (!st || !st.isFile() || st.size > maxBytes) return undefined;
+    if (!isInside(realpathSync(file), realpathSync(root))) return undefined;
+    return readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
 
 export const TIERS = ["luxury", "premium", "playful", "corporate", "minimal", "modest", "editorial"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -47,13 +62,14 @@ function walk(root: string, limit = 2500) {
       const p = join(dir, e);
       let st;
       try {
-        st = statSync(p);
+        // lstat, not stat: stat follows links, so a junction to another folder would be walked as if it were ours.
+        st = lstatSync(p);
       } catch {
         continue;
       }
-      if (st.isSymbolicLink?.()) continue;
+      if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) stack.push(p);
-      else if (++seen <= limit) {
+      else if (st.isFile() && ++seen <= limit) {
         const ext = extname(e).toLowerCase();
         if (TEXT_EXT.has(ext) && st.size < 400_000) text.push(p);
         else if (IMG_EXT.has(ext) && st.size > 8_000) images.push({ path: p, size: st.size });
@@ -79,10 +95,10 @@ export function projectProfile(root: string): ProjectProfile {
   let corpus = "";
   let pkgDeps: string[] = [];
 
-  const pkgPath = join(root, "package.json");
-  if (existsSync(pkgPath)) {
+  const pkgText = readInside(root, join(root, "package.json"));
+  if (pkgText !== undefined) {
     try {
-      const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+      const pkg = JSON.parse(pkgText);
       pkgDeps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
       corpus += ` ${pkg.name ?? ""} ${pkg.description ?? ""} ${(pkg.keywords ?? []).join(" ")}`;
     } catch {
@@ -103,12 +119,8 @@ export function projectProfile(root: string): ProjectProfile {
   let darkHits = 0;
   let lightHits = 0;
   for (const f of text.slice(0, 600)) {
-    let s: string;
-    try {
-      s = readFileSync(f, "utf8");
-    } catch {
-      continue;
-    }
+    const s = readInside(root, f);
+    if (s === undefined) continue;
     const ext = extname(f).toLowerCase();
     if ([".md", ".html", ".json", ".tsx", ".jsx", ".astro", ".vue", ".svelte"].includes(ext)) corpus += " " + s.slice(0, 20_000);
     for (const m of s.matchAll(/#([0-9a-f]{6})\b/gi)) {
@@ -175,16 +187,16 @@ function describe(root: string): { name?: string; about?: string } {
       .replace(/\s+/g, " ")
       .trim();
   try {
-    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    const pkg = JSON.parse(readInside(root, join(root, "package.json")) ?? "");
     name = pkg.name;
     if (typeof pkg.description === "string" && pkg.description.length > 20) about = pkg.description;
   } catch {
     /* no package.json */
   }
   for (const f of ["README.md", "readme.md", "README"]) {
-    const p = join(root, f);
-    if (!existsSync(p)) continue;
-    const md = readFileSync(p, "utf8").slice(0, 20_000);
+    const text = readInside(root, join(root, f));
+    if (text === undefined) continue;
+    const md = text.slice(0, 20_000);
     name ??= md.match(/^#\s+(.+)$/m)?.[1]?.trim();
     if (!about) {
       const para = md
@@ -197,9 +209,8 @@ function describe(root: string): { name?: string; about?: string } {
   }
   if (!about) {
     for (const f of ["index.html", join("public", "index.html"), join("src", "index.html")]) {
-      const p = join(root, f);
-      if (!existsSync(p)) continue;
-      const html = readFileSync(p, "utf8");
+      const html = readInside(root, join(root, f));
+      if (html === undefined) continue;
       name ??= html.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
       about = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)/i)?.[1];
       if (about) break;

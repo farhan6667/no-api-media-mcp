@@ -28,6 +28,7 @@ export interface Config {
   profileDir: string;
   /** Directories the server may write into. Defaults to the project it was started in. */
   outputRoots: string[];
+  /** "" when Chrome isn't installed: the server still starts, and only browser tools say what's missing (requireChrome). */
   chromePath: string;
   /** Optional: the Google account to use when several are signed in (matched on the page, never put in a URL). */
   googleEmail?: string;
@@ -79,7 +80,7 @@ export const STRIP_NOTICE =
   "Behaviour notice (new in 0.3.0): media_optimize strips embedded metadata from the files it writes " +
   "(EXIF, XMP, C2PA content credentials, text chunks), the way most web image optimizers do. Your originals " +
   "are untouched. Turn it off with keep_metadata: true on a call, NO_API_MEDIA_KEEP_METADATA=1, or " +
-  "`no-api-media-mcp config set strip_ai_metadata false`. This removes metadata only; invisible watermarks " +
+  "the CLI command `config set strip_ai_metadata false`. This removes metadata only; invisible watermarks " +
   "such as Google SynthID stay in the pixels, and platform rules on AI disclosure still apply to you.";
 
 /** Precedence: per-call keep_metadata > environment > config.json > default (strip). */
@@ -138,9 +139,15 @@ function findChrome(): string {
       : platform() === "darwin"
         ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
         : ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
-  const hit = candidates.find((c) => c && existsSync(c));
-  if (!hit) throw new Error("Google Chrome not found. Install Chrome or set NOAPI_CHROME to its path.");
-  return hit;
+  return candidates.find((c) => c && existsSync(c)) ?? "";
+}
+
+export const CHROME_MISSING = "Google Chrome not found. Install Chrome or set NOAPI_CHROME to its path. Tools that don't use the browser (codex, higgsfield and the local media tools) still work.";
+
+/** The Chrome path, or a clear error for the one tool call that needed it. Never thrown at startup. */
+export function requireChrome(cfg: Pick<Config, "chromePath">): string {
+  if (!cfg.chromePath || !existsSync(cfg.chromePath)) throw new Error(CHROME_MISSING);
+  return cfg.chromePath;
 }
 
 /**
@@ -230,12 +237,18 @@ export function loadConfig(): Config {
 }
 
 /** Small persistent state, e.g. the Flow project we reuse so we don't litter the user's account. */
-export function readState(cfg: Config): Record<string, string> {
+export function readState(cfg: Pick<Config, "home">): Record<string, string> {
   const f = join(cfg.home, "state.json");
-  return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
+  try {
+    const v = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {};
+  } catch {
+    // A damaged state file (a crash mid-write, a bad hand edit) must not stop the server from starting.
+    return {};
+  }
 }
 
-export function writeState(cfg: Config, patch: Record<string, string>) {
+export function writeState(cfg: Pick<Config, "home">, patch: Record<string, string>) {
   const f = join(cfg.home, "state.json");
   writeFileSync(f, JSON.stringify({ ...readState(cfg), ...patch }, null, 2));
 }

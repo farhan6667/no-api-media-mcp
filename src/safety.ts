@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const MEDIA_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov"]);
@@ -8,16 +8,62 @@ export function isInside(child: string, parent: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-/** Resolve the nearest existing ancestor through symlinks so a link inside the project can't point outside it. */
+/**
+ * A network (UNC) or device path: \\server\share, //server/share, \\?\..., \\.\...
+ * Merely opening one makes Windows connect to that host and offer the user's NTLM credentials,
+ * so these are refused before anything touches the disk.
+ */
+export function isNetworkPath(p: string): boolean {
+  return /^[\\/]{2}/.test(p);
+}
+
+/** Exists as a directory entry, even when it is a link that points nowhere (existsSync follows links and says no). */
+function lexists(p: string): boolean {
+  return lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+}
+
+/**
+ * Resolve the nearest existing ancestor through symlinks so a link inside the project can't point outside it.
+ * A dangling link counts as existing: following it on write would create a file wherever it points, so it is
+ * refused instead of being treated as a fresh name.
+ */
 function realAncestor(p: string): string {
   let cur = p;
-  while (!existsSync(cur)) {
+  while (!lexists(cur)) {
     const up = dirname(cur);
     if (up === cur) break;
     cur = up;
   }
-  const real = realpathSync(cur);
+  let real: string;
+  try {
+    real = realpathSync(cur);
+  } catch {
+    throw new Error("The path goes through a link that points nowhere. Refusing to follow it.");
+  }
   return join(real, relative(cur, p));
+}
+
+/**
+ * An input file the caller named: it must sit inside one of the roots. Checked on the text of the path first,
+ * so a path outside the project (or a network path) is refused without touching the disk there, then again
+ * after links are resolved. Errors name only the path the caller gave, never where it resolved to.
+ */
+export function confineInput(roots: string[], p: string): string {
+  if (!p.trim()) throw new Error("The path is empty. Pass a file inside the project, e.g. public/images/hero.png.");
+  if (p.includes("\0")) throw new Error("The path contains a null byte.");
+  if (isNetworkPath(p)) throw new Error("Network (UNC) and device paths are not allowed.");
+  const given = roots.map((r) => resolve(r));
+  const real = given.map((r) => realpathSync(r));
+  const candidate = resolve(real[0], p);
+  if (![...real, ...given].some((r) => isInside(candidate, r))) throw new Error(`Input must be inside the project: ${p}`);
+  let file: string;
+  try {
+    file = realpathSync(candidate);
+  } catch {
+    throw new Error(`File not found in the project: ${p}`);
+  }
+  if (!real.some((r) => isInside(file, r))) throw new Error(`Input must be inside the project: ${p}`);
+  return file;
 }
 
 export function slugify(text: string, max = 48): string {
@@ -59,7 +105,8 @@ export function resolveOutput(opts: {
     let n = 2;
     while (existsSync(target)) target = join(dir, `${base}-${n++}${opts.ext}`);
   } else {
-    if (/^\\\\|^\/\//.test(opts.outputPath)) throw new Error("Network (UNC) paths are not allowed.");
+    if (isNetworkPath(opts.outputPath)) throw new Error("Network (UNC) paths are not allowed.");
+    if (opts.outputPath.includes("\0")) throw new Error("The path contains a null byte.");
     // A colon after the drive letter means an NTFS alternate data stream (hero.png:hidden.png).
     if (opts.outputPath.slice(2).includes(":")) throw new Error("Colons are not allowed in file names.");
     for (const seg of opts.outputPath.split(/[\\/]+/)) {

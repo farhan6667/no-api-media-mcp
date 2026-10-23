@@ -2,7 +2,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { Browser } from "./browser.js";
-import { readState, STRIP_NOTICE, writeState, type Config } from "./config.js";
+import { CHROME_MISSING, readState, STRIP_NOTICE, writeState, type Config } from "./config.js";
+import { launchArgs } from "./install.js";
 import { chatgptStatus } from "./providers/chatgpt.js";
 import { codexStatus } from "./providers/codex.js";
 import { flowStatus } from "./providers/google.js";
@@ -22,7 +23,7 @@ function ffmpegOk(): boolean {
 }
 
 /**
- * `npx no-api-media-mcp setup`: check prerequisites, open the sign-in window, wait for it to close,
+ * `node dist/src/index.js setup`: check prerequisites, open the sign-in window, wait for it to close,
  * show which accounts are ready and print the config for each MCP client. Runs before any client is set up.
  */
 export async function runSetup(cfg: Config, browser: Browser, version: string, argv: string[]) {
@@ -52,7 +53,10 @@ export async function runSetup(cfg: Config, browser: Browser, version: string, a
   }
   say();
 
-  if (!noLogin) {
+  if (!noLogin && !cfg.chromePath) {
+    say(CHROME_MISSING);
+    say();
+  } else if (!noLogin) {
     say(`Opening Chrome so you can sign in to: ${services.join(", ")}.`);
     say("Use the Google account that has your AI plan. Close the whole window when you're done.");
     const urls = services.map((s) => (s === "chatgpt" ? "https://chatgpt.com/" : s === "google" ? "https://accounts.google.com/ServiceLogin?continue=https://flow.google.com/" : "")).filter(Boolean);
@@ -91,10 +95,14 @@ export async function runSetup(cfg: Config, browser: Browser, version: string, a
   }
 
   say();
+  // Always this exact copy by its absolute path, never `npx no-api-media-mcp@latest`: that would fetch and run
+  // whatever is published under the name on every start. Written unredacted, since the path has to be usable.
+  const launch = launchArgs();
+  const quoted = launch.args.map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(" ");
   say("Add to Claude Code:");
-  say("  claude mcp add --scope user no-api-media -- npx -y no-api-media-mcp@latest");
+  process.stdout.write(`  claude mcp add --scope user no-api-media -- ${launch.command} ${quoted}\n`);
   say("Claude Desktop / Cursor: add this under \"mcpServers\" in the MCP config:");
-  say('  "no-api-media": { "command": "npx", "args": ["-y", "no-api-media-mcp@latest"] }');
+  process.stdout.write(`  "no-api-media": ${JSON.stringify({ command: launch.command, args: launch.args })}\n`);
   say();
   say('Done. First prompt to try: "Use no-api-media to make a 16:9 hero image of a quiet sunrise over hills with flow"');
 }

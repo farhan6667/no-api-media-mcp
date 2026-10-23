@@ -51,8 +51,9 @@ A security and correctness release from an adversarial QA pass. Every fix below 
 **Supply chain and CI**
 
 - Direct dependencies pinned to exact versions. `npm audit fix` moved body-parser to 2.4.0 and ip-address to
-  10.7.4 (both only used by the MCP SDK's HTTP transport, which this stdio server doesn't start). body-parser
-  2.4.0 was checked for npm provenance before taking it.
+  10.7.4 (both only used by the MCP SDK's HTTP transport, which this stdio server doesn't start), and fast-uri to
+  3.1.9 (used by the SDK's JSON schema checks). body-parser 2.4.0 and fast-uri 3.1.9 were checked for npm
+  provenance before taking them.
 - GitHub Actions pinned to commit SHAs, CI also runs `npm audit signatures`, and the npm publish workflow only
   grants the OIDC token to its one job.
 - The quick start uses `npm ci`, which installs exactly what `package-lock.json` says.

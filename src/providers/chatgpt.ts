@@ -25,6 +25,10 @@ export async function chatgptImage(page: Page, prompt: string, aspect?: string, 
   await assertNoWall(page);
 
   const ask = `Create an image${aspect ? `, aspect ratio ${aspect}` : ""}. ${prompt}`;
+  // Images already on the page (an older chat ChatGPT reopened, a library preview) must never count as the
+  // answer. Right after sending, the reply has not started streaming yet, so without this list the first check
+  // returned an old, unrelated image (issue #10).
+  const before = await generatedImages(page);
   await editor.click();
   await page.keyboard.insertText(ask);
   await sleep(400);
@@ -46,11 +50,7 @@ export async function chatgptImage(page: Page, prompt: string, aspect?: string, 
         throw new StopWaiting("ChatGPT says your image limit is used up for now. Try provider 'flow' or wait for the reset.");
       }
       const streaming = await page.locator('[data-testid="stop-button"], button[aria-label="Stop streaming"]').count();
-      const found = await page.evaluate(() => {
-        const imgs = [...document.querySelectorAll("main img")] as HTMLImageElement[];
-        const gen = imgs.filter((i) => i.complete && i.naturalWidth >= 512 && /generated image/i.test(i.alt || ""));
-        return gen.length ? gen[gen.length - 1].src : "";
-      });
+      const found = newestNew(await generatedImages(page), before);
       return !streaming && found ? found : undefined;
     },
     6 * 60_000,
@@ -60,14 +60,25 @@ export async function chatgptImage(page: Page, prompt: string, aspect?: string, 
 
   // Give the final, sharp version a moment to replace the progressive preview.
   await sleep(3000);
-  const finalSrc = await page.evaluate(() => {
-    const imgs = [...document.querySelectorAll("main img")] as HTMLImageElement[];
-    const gen = imgs.filter((i) => i.complete && i.naturalWidth >= 512 && /generated image/i.test(i.alt || ""));
-    return gen.length ? gen[gen.length - 1].src : "";
-  });
+  const finalSrc = newestNew(await generatedImages(page), before);
 
   const data = await fetchMedia(page, finalSrc || src, MEDIA_HOSTS);
   return { data, note: "chatgpt.com, normal chat (appears in your ChatGPT history)" };
+}
+
+/** Sources of the fully loaded generated images on the page, in page order. */
+async function generatedImages(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const imgs = [...document.querySelectorAll("main img")] as HTMLImageElement[];
+    return imgs.filter((i) => i.complete && i.naturalWidth >= 512 && /generated image/i.test(i.alt || "")).map((i) => i.src);
+  });
+}
+
+/** The last image that was not on the page before the prompt was sent, or "" if there is none yet. */
+export function newestNew(now: string[], before: string[]): string {
+  const seen = new Set(before);
+  const fresh = now.filter((s) => s && !seen.has(s));
+  return fresh.length ? fresh[fresh.length - 1] : "";
 }
 
 /** If ChatGPT answered with text instead of an image (refusal, limit reached), surface that text. */

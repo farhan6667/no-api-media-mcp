@@ -444,7 +444,7 @@ Without a command, `dist/src/index.js` runs as the MCP server. That's what your 
 | `That Google account is not signed in` | Sign in with the account that has your AI plan, or set `NOAPI_GOOGLE_EMAIL` to it |
 | `Flow no longer offers "..."` or a menu not found | Google changed the Flow page. Update to the latest version or [open an issue](https://github.com/farhan6667/no-api-media-mcp/issues) |
 | `running low on Google Flow credits` | Video credits are low. Images on Nano Banana 2 usually still work |
-| `Google Chrome not found` | Install Chrome or set `NOAPI_CHROME` to its path |
+| `No Chromium browser found` | Install Chrome, Brave or Edge, or set `NOAPI_CHROME` to the browser's path |
 | `ffmpeg not found` | `winget install Gyan.FFmpeg` (Windows), `brew install ffmpeg` (macOS), `sudo apt install ffmpeg` (Linux) |
 | `Background removal needs rembg` | `uv tool install "rembg[cpu,cli]"` or `pip install "rembg[cpu,cli]"` |
 | `rembg is installed without a backend` | `uv tool install --force "rembg[cpu,cli]"` |
@@ -466,6 +466,8 @@ All optional.
 | `NOAPI_MIN_GAP` | `20` | Seconds between two generations on one provider |
 | `NO_API_MEDIA_KEEP_METADATA` | unset | `1` keeps embedded metadata in `media_optimize` output. Same as `strip_ai_metadata=false` in `config.json`; the environment wins |
 | `NOAPI_CHROME`, `NOAPI_FFMPEG`, `NOAPI_CODEX_JS`, `NOAPI_HIGGSFIELD`, `NOAPI_REMBG` | auto-detected | Binary locations |
+
+**Using Brave or Edge.** Without `NOAPI_CHROME` the server looks for Chrome, then Brave, then Edge, and `accounts_status` shows which one it picked. To choose one yourself, set for example `NOAPI_CHROME=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`. Keep the same browser once you have signed in: the sign-ins live in the profile folder, and a much newer Chromium can upgrade that folder so an older browser no longer opens it.
 
 ## Add another site without code
 

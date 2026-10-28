@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir, platform } from "node:os";
 import { join } from "node:path";
-import { env, extraBinDirs, npmGlobalRoots, scrubbedEnv } from "../config.js";
+import { env, extraBinDirs, loadConfig, npmGlobalRoots, readState, scrubbedEnv, writeState } from "../config.js";
 
 /**
  * Codex CLI signed in with a ChatGPT plan has a built-in image tool, no API key needed.
@@ -95,12 +95,50 @@ function codexHome(): string {
   return env("CODEX_HOME") ?? join(homedir(), ".codex");
 }
 
+/**
+ * `codex login status` only reads the local login file, so it still says "Logged in using ChatGPT" after the
+ * token was revoked or expired (issue #11). When a real run is refused for login reasons we remember when, and
+ * the status reports "not signed in" until the login file is newer than that refusal (a fresh `codex login`).
+ */
+export function staleLogin(failedAtMs: number, loginFileMtimeMs: number | undefined): boolean {
+  return failedAtMs > 0 && (loginFileMtimeMs === undefined || failedAtMs > loginFileMtimeMs);
+}
+
+function loginFileMtime(): number | undefined {
+  try {
+    return statSync(join(codexHome(), "auth.json")).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberAuthFailure(failedAt: number): void {
+  try {
+    writeState(loadConfig(), { codexAuthFailedAt: String(failedAt) });
+  } catch {
+    /* the status falls back to the CLI's own answer */
+  }
+}
+
 export async function codexStatus(): Promise<{ signedIn: boolean; detail: string }> {
   try {
     const { cmd, pre } = codexCommand();
     const r = await run(cmd, [...pre, ...CODEX_SAFETY_ARGS, "login", "status"], tmpdir(), 30_000);
     const last = r.out.trim().split("\n").at(-1) ?? "";
-    return { signedIn: /using ChatGPT/i.test(r.out), detail: /api key/i.test(last) ? "Signed in with an API key. Run `codex login` and choose ChatGPT." : last };
+    const signedIn = /using ChatGPT/i.test(r.out);
+    let failedAt = 0;
+    try {
+      failedAt = Number(readState(loadConfig()).codexAuthFailedAt ?? 0) || 0;
+    } catch {
+      failedAt = 0;
+    }
+    if (signedIn && staleLogin(failedAt, loginFileMtime())) {
+      return {
+        signedIn: false,
+        detail: `The Codex CLI still shows a login, but its last image run on ${new Date(failedAt).toISOString()} was refused (the sign-in expired or was revoked). Run in a terminal: codex login`,
+      };
+    }
+    return { signedIn, detail: /api key/i.test(last) ? "Signed in with an API key. Run `codex login` and choose ChatGPT." : last };
   } catch (e) {
     return { signedIn: false, detail: (e as Error).message };
   }
@@ -138,7 +176,10 @@ export async function codexImage(prompt: string, size?: string, signal?: AbortSi
       if (/out of credits|usage limit|rate limit|quota/i.test(r.out)) {
         throw new Error("Your ChatGPT plan's Codex limit is used up for now. Try provider 'flow' (usually 0 credits) or 'chatgpt', or wait for the limit to reset.");
       }
-      if (/not logged in|login required|unauthorized/i.test(r.out)) throw new Error("Codex is not signed in. Run in a terminal: codex login");
+      if (/not logged in|login required|unauthorized|refresh token|token (?:has )?(?:expired|been revoked)|\b401\b/i.test(r.out)) {
+        rememberAuthFailure(Date.now());
+        throw new Error("Codex is not signed in. Run in a terminal: codex login");
+      }
       throw new Error(`Codex did not produce an image. Last output: ${r.out.slice(-600)}`);
     }
     return { data: readFileSync(join(work, file)), note: "Codex CLI built-in image tool (ChatGPT plan)" };

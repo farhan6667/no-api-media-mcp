@@ -126,23 +126,56 @@ function flag(name: string, def: boolean): boolean {
   return !(v === "0" || v.toLowerCase() === "false");
 }
 
+/**
+ * Chromium browsers to try, in order: Chrome, then Brave, then Edge. All three run the same Playwright
+ * automation and keep the sign-ins in our own profile folder. NOAPI_CHROME (any of them, by path) wins.
+ * Keep the same browser family once a profile is signed in: a much newer Chromium can upgrade the profile
+ * so an older one no longer opens it.
+ */
+export function browserCandidates(os: string = platform(), e: Record<string, string | undefined> = process.env): string[] {
+  const pf = e["PROGRAMFILES"] ?? "C:\\Program Files";
+  const pf86 = e["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)";
+  const local = e["LOCALAPPDATA"] ?? "";
+  if (os === "win32") {
+    return [
+      join(pf, "Google\\Chrome\\Application\\chrome.exe"),
+      join(pf86, "Google\\Chrome\\Application\\chrome.exe"),
+      local && join(local, "Google\\Chrome\\Application\\chrome.exe"),
+      join(pf, "BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+      join(pf86, "BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+      local && join(local, "BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+      join(pf86, "Microsoft\\Edge\\Application\\msedge.exe"),
+      join(pf, "Microsoft\\Edge\\Application\\msedge.exe"),
+    ].filter(Boolean) as string[];
+  }
+  if (os === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ];
+  }
+  return ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser",
+    "/usr/bin/brave-browser", "/usr/bin/microsoft-edge"];
+}
+
 function findChrome(): string {
   const fromEnv = env("CHROME");
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
-  const candidates =
-    platform() === "win32"
-      ? [
-          join(process.env["PROGRAMFILES"] ?? "C:\\Program Files", "Google\\Chrome\\Application\\chrome.exe"),
-          join(process.env["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)", "Google\\Chrome\\Application\\chrome.exe"),
-          join(process.env["LOCALAPPDATA"] ?? "", "Google\\Chrome\\Application\\chrome.exe"),
-        ]
-      : platform() === "darwin"
-        ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-        : ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
-  return candidates.find((c) => c && existsSync(c)) ?? "";
+  return browserCandidates().find((c) => existsSync(c)) ?? "";
 }
 
-export const CHROME_MISSING = "Google Chrome not found. Install Chrome or set NOAPI_CHROME to its path. Tools that don't use the browser (codex, higgsfield and the local media tools) still work.";
+/** "Chrome", "Brave", "Edge" or the file name, for status output. */
+export function browserName(path: string): string {
+  const p = path.toLowerCase();
+  if (!p) return "none";
+  if (p.includes("brave")) return "Brave";
+  if (p.includes("msedge") || p.includes("microsoft edge")) return "Edge";
+  if (p.includes("chrome") || p.includes("chromium")) return "Chrome";
+  return path.split(/[\\/]/).at(-1) ?? path;
+}
+
+export const CHROME_MISSING = "No Chromium browser found (looked for Chrome, Brave and Edge). Install one, or set NOAPI_CHROME to the browser's .exe path. Tools that don't use the browser (codex, higgsfield and the local media tools) still work.";
 
 /** The Chrome path, or a clear error for the one tool call that needed it. Never thrown at startup. */
 export function requireChrome(cfg: Pick<Config, "chromePath">): string {

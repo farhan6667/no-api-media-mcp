@@ -8,7 +8,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { Browser } from "./browser.js";
-import { loadConfig, readConfigFile, readState, STRIP_NOTICE, trustSystemCertificates, writeConfigFile, writeState } from "./config.js";
+import { browserName, loadConfig, readConfigFile, readState, STRIP_NOTICE, trustSystemCertificates, writeConfigFile, writeState } from "./config.js";
 import { formatFromPath, optimizeImage, optimizeVideo, type ImageFormat } from "./optimize.js";
 import { chatgptImage, chatgptLastReply, chatgptStatus } from "./providers/chatgpt.js";
 import { codexImage, codexStatus } from "./providers/codex.js";
@@ -732,6 +732,7 @@ server.registerTool(
   },
   async (_a, extra) => {
     const out: Record<string, unknown> = { version: VERSION, codex: await codexStatus(), higgsfield: await higgsfieldStatus() };
+    out.browser = { name: browserName(cfg.chromePath), path: cfg.chromePath || null, chosenBy: process.env.NOAPI_CHROME ? "NOAPI_CHROME" : "auto" };
     try {
       const page = await browser.page(extra.signal);
       try {
@@ -756,7 +757,7 @@ server.registerTool(
         await page.close().catch(() => undefined);
       }
     } catch (e) {
-      out.browser = (e as Error).message;
+      out.browser = { ...(out.browser as object), error: (e as Error).message };
     }
     out.outputRoots = cfg.outputRoots;
     return ok(out);

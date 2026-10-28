@@ -225,7 +225,7 @@ describe("startup never dies on things a user can fix", () => {
 
   it("a missing Chrome is reported by the tool that needs it, not at startup", () => {
     assert.throws(() => requireChrome({ chromePath: "" }), (e: Error) => e.message === CHROME_MISSING);
-    assert.throws(() => requireChrome({ chromePath: join(tmpdir(), "no-such-chrome.exe") }), /Chrome not found/);
+    assert.throws(() => requireChrome({ chromePath: join(tmpdir(), "no-such-chrome.exe") }), /No Chromium browser found.*NOAPI_CHROME/);
   });
 });
 
